@@ -19,11 +19,12 @@ function exposeAPI(name, api) {
     }
 }
 
-exposeAPI('appService', buildAppService());
-exposeAPI('appNotice', buildAppNotice());
+function init() {
+    exposeAPI('appService', buildAppService());
+    exposeAPI('appNotice', buildAppNotice());
+}
 
 module.exports = {
     exposeAPI,
-    buildAppService,
-    buildAppNotice
+    init
 };

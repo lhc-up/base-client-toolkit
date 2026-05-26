@@ -1,5 +1,6 @@
 const { BrowserWindow } = require('electron');
 const path = require('path');
+const merge = require('lodash.merge');
 // const preloadPath = require('../preload/index.js');
 
 class BaseWindow {
@@ -28,30 +29,35 @@ class BaseWindow {
 
     // ==================== 模板方法 ====================
     create() {
-        const userOptions = this.getWindowOptions();
-        const mergedOptions = this.onBeforeCreate(userOptions);
-        const window = this._createWindow(mergedOptions);
+        const window = this._createWindow();
         this.browserWindow = window;
         this._setupEventListeners(window);
         this.onCreated(window);
         return window;
     }
 
-    _createWindow(options) {
-        const window = new BrowserWindow({
-            ...options,
-            show: true,
-            frame: true,
-            backgroundColor: '#ffffff',
-            allowRunningInsecureContent: true,
-            webPreferences: {
-                ...options.webPreferences,
-                // preload: preloadPath,
-                contextIsolation: true,
-                nodeIntegration: true
-            }
-        });
+    _createWindow() {
+        const userOptions = this.getWindowOptions();
+        const mergedOptions = merge(
+            {
+                show: true,
+                frame: true,
+                backgroundColor: '#ffffff',
+                allowRunningInsecureContent: true,
+                webPreferences: {
+                    // preload: preloadPath,
+                    contextIsolation: true,
+                    nodeIntegration: true
+                }
+            },
+            userOptions
+        );
+        this.onBeforeCreate(mergedOptions);
+
+        const window = new BrowserWindow(mergedOptions);
         window.loadURL(this.getPageUrl());
+        
+        this.onCreated(window);
         return window;
     }
 

@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const schema = require('./schema');
 const { ipcMain, BrowserWindow } = require('electron');
 
@@ -27,8 +29,6 @@ function registerEvents(namespace, events) {
 }
 
 function scanUserNotices(dir) {
-    const fs = require('fs');
-    const path = require('path');
     const files = fs.readdirSync(dir);
 
     for (const file of files) {

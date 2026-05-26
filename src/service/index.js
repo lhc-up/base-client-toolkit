@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const schema = require('./schema');
 const { ipcMain } = require('electron');
 
@@ -37,8 +39,6 @@ function registerService(namespace, handlers) {
 }
 
 function scanUserServices(dir) {
-    const fs = require('fs');
-    const path = require('path');
     const files = fs.readdirSync(dir);
 
     for (const file of files) {
