@@ -1,0 +1,31 @@
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+.idea/
+.DS_Store
+._DS_Store
+._*
+node_modules/
+electronPackage/
+pack/
+app/
+dist/*
+.project
+yarn.lock
+npm-debug.log
+\._node_modules
+cache
+
+localAudios/
+
+\.vscode/
+keyboardhook.log
+/aesDecode
+# SpecStory explanation file
+.specstory/.what-is-this.md
+
+
+# SpecStory files
+.specstory/
+.specstory/**
