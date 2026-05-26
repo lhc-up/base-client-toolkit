@@ -8,5 +8,5 @@ const { initServiceBridge } = require('./service');
 const { initNoticeBridge } = require('./notice');
 
 // 初始化 service 和 notice 桥接
-// initServiceBridge();
-// initNoticeBridge();
+initServiceBridge();
+initNoticeBridge();
