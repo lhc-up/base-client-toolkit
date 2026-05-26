@@ -1,6 +1,6 @@
 const { BrowserWindow } = require('electron');
 const path = require('path');
-const preloadPath = require('../preload/index.js');
+// const preloadPath = require('../preload/index.js');
 
 class BaseWindow {
     constructor(options = {}) {
@@ -46,7 +46,7 @@ class BaseWindow {
             allowRunningInsecureContent: true,
             webPreferences: {
                 ...options.webPreferences,
-                preload: preloadPath,
+                // preload: preloadPath,
                 contextIsolation: true,
                 nodeIntegration: true
             }

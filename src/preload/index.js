@@ -1,12 +1,29 @@
 /**
  * Preload Bridge 入口
  * 由 BaseWindow 在创建窗口时自动加载
- * 对用户不可见，渲染进程通过 window.appService 和 window.preload.notice 访问
+ * 渲染进程通过 window.appService、window.appNotice 访问
  */
+const { contextBridge } = require('electron');
+const buildAppService = require('./service');
+const buildAppNotice = require('./notice');
 
-const { initServiceBridge } = require('./service');
-const { initNoticeBridge } = require('./notice');
+function exposeAPI(name, api) {
+    if (process.contextIsolated) {
+        try {
+            contextBridge.exposeInMainWorld(name, api);
+        } catch (error) {
+            console.error(error);
+        }
+    } else {
+        window[name] = api;
+    }
+}
 
-// 初始化 service 和 notice 桥接
-initServiceBridge();
-initNoticeBridge();
+exposeAPI('appService', buildAppService());
+exposeAPI('appNotice', buildAppNotice());
+
+module.exports = {
+    exposeAPI,
+    buildAppService,
+    buildAppNotice
+};

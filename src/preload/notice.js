@@ -1,101 +1,72 @@
-/**
- * Notice Bridge
- * 提供 window.preload.notice 事件订阅 API
- */
-
-const { contextBridge, ipcRenderer } = require('electron');
-
-// 订阅映射: event -> Set<callback>
-const listeners = new Map();
+const { ipcRenderer } = require('electron');
 
 /**
- * 初始化 Notice 桥接
+ * 根据 schema 动态生成 appNotice API
+ * 形如 appNotice[namespace][event].on/once/off(callback)
  */
-function initNoticeBridge() {
-    // 监听主进程发来的事件
-    ipcRenderer.on('notice:event', (event, noticeEvent, data) => {
-        const cbs = listeners.get(noticeEvent);
+function buildAppNotice() {
+    const noticeSchema = ipcRenderer.sendSync('notice:getSchema');
+    const appNotice = {};
+
+    // event 全名（namespace.event）-> Set<callback>
+    const listeners = new Map();
+
+    // 单一监听器分发到所有订阅
+    ipcRenderer.on('notice:event', (_event, fullEvent, data) => {
+        const cbs = listeners.get(fullEvent);
         if (cbs) {
             cbs.forEach(cb => cb(data));
         }
     });
 
-    // 暴露 API 到 window.preload.notice
-    contextBridge.exposeInMainWorld('preload', {
-        notice: {
-            /**
-             * 订阅事件
-             * @param {string} event - 事件名，如 'update.progress'
-             * @param {Function} callback - 回调函数
-             * @returns {Function} 取消订阅的函数
-             */
-            on: (event, callback) => {
-                if (!listeners.has(event)) {
-                    listeners.set(event, new Set());
-                }
-                listeners.get(event).add(callback);
-
-                // 返回取消订阅函数
-                return () => {
-                    off(event, callback);
-                };
-            },
-
-            /**
-             * 单次订阅
-             * @param {string} event - 事件名
-             * @param {Function} callback - 回调函数
-             * @returns {Function} 取消订阅的函数
-             */
-            once: (event, callback) => {
-                const wrapper = data => {
-                    off(event, wrapper);
-                    callback(data);
-                };
-                if (!listeners.has(event)) {
-                    listeners.set(event, new Set());
-                }
-                listeners.get(event).add(wrapper);
-
-                return () => {
-                    off(event, wrapper);
-                };
-            },
-
-            /**
-             * 取消订阅
-             * @param {string} event - 事件名
-             * @param {Function} [callback] - 特定回调，不传则取消该事件所有订阅
-             */
-            off: (event, callback) => {
-                if (!callback) {
-                    // 取消该事件所有订阅
-                    listeners.delete(event);
-                } else {
-                    const cbs = listeners.get(event);
-                    if (cbs) {
-                        cbs.delete(callback);
-                        if (cbs.size === 0) {
-                            listeners.delete(event);
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-/**
- * 取消订阅（内部使用，由 on/once 返回的函数调用）
- */
-function off(event, callback) {
-    const cbs = listeners.get(event);
-    if (cbs) {
+    function off(fullEvent, callback) {
+        const cbs = listeners.get(fullEvent);
+        if (!cbs) return;
         cbs.delete(callback);
         if (cbs.size === 0) {
-            listeners.delete(event);
+            listeners.delete(fullEvent);
         }
     }
+
+    for (const { namespace, events } of noticeSchema) {
+        appNotice[namespace] = {};
+
+        for (const eventName of Object.keys(events)) {
+            const fullEvent = `${namespace}.${eventName}`;
+
+            appNotice[namespace][eventName] = {
+                on(callback) {
+                    if (!listeners.has(fullEvent)) {
+                        listeners.set(fullEvent, new Set());
+                    }
+                    listeners.get(fullEvent).add(callback);
+                    return () => off(fullEvent, callback);
+                },
+
+                once(callback) {
+                    const wrapper = data => {
+                        off(fullEvent, wrapper);
+                        callback(data);
+                    };
+                    if (!listeners.has(fullEvent)) {
+                        listeners.set(fullEvent, new Set());
+                    }
+                    listeners.get(fullEvent).add(wrapper);
+                    return () => off(fullEvent, wrapper);
+                },
+
+                off(callback) {
+                    if (!callback) {
+                        listeners.delete(fullEvent);
+                    } else {
+                        off(fullEvent, callback);
+                    }
+                }
+            };
+        }
+    }
+
+    return appNotice;
 }
 
-module.exports = { initNoticeBridge };
+module.exports = buildAppNotice;

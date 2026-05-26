@@ -2,17 +2,15 @@ const schema = require('./schema');
 const { ipcMain, BrowserWindow } = require('electron');
 
 let registeredNamespaces = new Map();
-let fullSchema = { ...schema };
+let noticeSchemas = [...schema];
 
 function init({ userNoticeDir }) {
-    // 合并内置 schema
-    for (const [namespace, events] of Object.entries(schema)) {
-        registerEvents(namespace, events);
+    for (const notice of schema) {
+        registerEvents(notice.namespace, notice.events);
     }
 
-    // 注册 'notice:getSchema' IPC handler
-    ipcMain.handle('notice:getSchema', () => {
-        return fullSchema;
+    ipcMain.on('notice:getSchema', event => {
+        event.returnValue = getSchema();
     });
 
     // 扫描用户 notices 目录
@@ -37,7 +35,10 @@ function scanUserNotices(dir) {
         if (!file.endsWith('.js')) continue;
         const notice = require(path.join(dir, file));
         registerEvents(notice.namespace, notice.events);
-        fullSchema[notice.namespace] = notice.events;
+        noticeSchemas.push({
+            namespace: notice.namespace,
+            events: notice.events
+        });
     }
 }
 
@@ -76,7 +77,7 @@ function direct(event, windowId, data) {
 }
 
 function getSchema() {
-    return fullSchema;
+    return noticeSchemas;
 }
 
 function cleanupWindow(windowId) {

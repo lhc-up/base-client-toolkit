@@ -10,9 +10,8 @@ function init({ userServiceDir }) {
         registerService(s.namespace, s.handlers);
     }
 
-    // 注册 'service:getServiceList' IPC handler
-    ipcMain.handle('service:getServiceList', () => {
-        return serviceSchemas;
+    ipcMain.on('service:getServiceList', event => {
+        event.returnValue = getServiceList();
     });
 
     // 扫描用户 service 目录
@@ -63,6 +62,7 @@ function register(namespace, handlers) {
 }
 
 function cleanup() {
+    ipcMain.removeListener('service:getServiceList');
     registeredNamespaces.clear();
     serviceSchemas = [...schema];
 }
