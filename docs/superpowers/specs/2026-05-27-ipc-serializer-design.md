@@ -82,7 +82,7 @@ const { serialize, safeStringify, configureSerializer } =
   - `maxStringLength`：默认 10240（10KB）
   - `maxArrayLength`：默认 1000
   - `maxKeys`：默认 1000
-  - `strict`：默认 `process.env.NODE_ENV !== 'production'`
+  - `strict`：默认 `process.env.NODE_ENV !== 'production'`（**在模块加载时一次性求值**，运行时修改 `NODE_ENV` 不会改变默认；如需切换请显式 `configureSerializer({ strict })`）
   - `onError(reason, path)`：意外异常的回调钩子
 
 #### `safeStringify(value, opts?) → string`
@@ -199,7 +199,29 @@ const { serialize, safeStringify, configureSerializer } =
 ### `toJSON` 约定
 
 - 对象若实现 `toJSON()`，**先调用** `toJSON()` 取返回值再递归 serialize（与 `JSON.stringify` 默认一致）
-- `toJSON()` 抛错时，回退到普通对象路径，不让一次抛错污染整个序列化
+- `toJSON()` 抛错时，回退到普通对象路径，并**跳过 `toJSON` 键本身**——否则 `toJSON` 函数会被列为 `[Function: toJSON]` 留在输出里，且会在递归时再次触发 `toJSON()` 调用
+
+### 关于循环检测的范围
+
+`seen` 表（用于检测循环引用）只对**容器类型**记录：plain object、array、Map、Set、class 实例。
+
+**leaf-like 类型不参与循环检测**：Date / Error / RegExp / Buffer / ArrayBuffer / TypedArray / Promise / WeakMap / WeakSet / DOM 节点 / Window。这些类型在 walker 中直接转成 plain 表示后返回，本身不会再有子节点导致循环。
+
+实际影响：同一个 leaf 引用在多个字段中出现时**各自正常序列化**，不会被误标为 `[Circular]`。例如：
+
+```js
+const d = new Date('2026-01-01T00:00:00.000Z');
+serialize({ a: d, b: d })
+// → { a: '2026-01-01T00:00:00.000Z', b: '2026-01-01T00:00:00.000Z' }
+```
+
+而同一个 plain object 在多个字段中出现时，**第二次仍被标为 `[Circular]`**（保守的防御默认，避免 DAG 退化为指数级遍历）：
+
+```js
+const shared = { value: 1 };
+serialize({ a: shared, b: shared })
+// → { a: { value: 1 }, b: '[Circular: $.a]' }
+```
 
 ### 关于"无 `__type` 标记"
 
@@ -272,58 +294,75 @@ const { serialize, safeStringify, configureSerializer } =
 
 ### 9.2 测试覆盖范围
 
-按测试文件分块：
+按测试文件分块（实际共 11 个）：
 
-#### `serializer.test.js`（核心）
+#### `limits.test.js`（配置 API）
+- `DEFAULTS` 常量
+- `configureSerializer` 全局配置变更
+- `resolveOpts` 三级回退（per-call > global > default），用 `??` 保护 falsy 值
+
+#### `placeholders.test.js`（占位符生成）
+- 16 个占位符函数各覆盖核心分支：fn 匿名、Symbol 有无 description、Buffer 优先 byteLength、circular 默认路径 `$`、Number 的 NaN/Infinity/-Infinity、DOM tagName/nodeName 回退、truncated 三种形式
+
+#### `adapters.test.js`（特殊类型识别 + 转换）
+- 8 个 type predicates（含 `isWindowLike` 对 throwing getter 的容错）
+- Date → ISO 字符串；Invalid Date → `null`
+- Error 含子类（TypeError）→ `{ name, message, stack }`；code 仅在定义时出现；cause 通过 recurse 回调
+- Map：string-only-keys 转对象、混合 key 转 entries 数组
+- Set → 数组
+- RegExp → `{ source, flags }`
+
+#### `serializer.test.js`（核心 walker）
 - 基础类型：string / number / boolean / null / undefined / NaN / Infinity 各一个用例
 - 普通对象、数组、嵌套结构
 - 不可序列化类型：function / symbol / bigint / Promise / WeakMap 转占位符
-- toJSON 路径：实现了 toJSON 的对象优先用 toJSON 结果
-- 深拷贝隔离：修改输出不影响输入
-
-#### `adapters.test.js`（特殊类型）
-- Date → ISO 字符串
-- Error 含子类（TypeError、RangeError）→ `{ name, message, stack }`
-- Error.cause 递归 serialize
-- Map：string-key 转对象、混合 key 转 entries 数组
-- Set → 数组
-- RegExp → `{ source, flags }`
-- Buffer / ArrayBuffer / TypedArray → 长度字符串（不打印内容）
-- Class 实例 → plain copy（不带 __type）
-- DOM 节点（renderer 端用 jsdom 环境验证）
-
-#### `limits.test.js`（防御上限）
-- 字符串超长：截断 + `[truncated N chars]`
-- 数组超长：截断 + `[truncated N items]`
-- 对象超键：保留前 N + `__truncated`
-- 嵌套超深：`[MaxDepth]`
-- 配置可覆盖：通过 `opts` 和 `configureSerializer` 均能改默认值
+- 特殊类型端到端：Date、Error+cause、Map、Set、RegExp、Buffer、ArrayBuffer、TypedArray
+- toJSON 路径：实现了 toJSON 的对象优先用 toJSON 结果；toJSON 抛错时跳过 `toJSON` 键回退到普通对象路径
+- Class 实例 → plain copy（不带 `__type`）
+- JSON-safety 兜底：包含各种"以前会崩"字段的对象经 serialize 后 `JSON.stringify` 不抛
+- 共享 leaf 引用：同一 Date / Error / RegExp / Buffer 在多个字段中应各自序列化，不被误标为 Circular；同一 plain object 在多个字段中第二次仍被标为 Circular（pinned）
 
 #### `circular.test.js`（循环引用）
 - 直接自引用：`a.a = a`
 - 间接循环：`a.b = b; b.a = a`
 - 数组中循环
-- 循环路径标识正确：`[Circular: $.a.b]`
+- 循环路径标识正确
+- 循环输出经 `JSON.stringify` 不抛
+
+#### `limits-runtime.test.js`（运行时上限触发）
+- 字符串超长：截断 + `[truncated N chars]`
+- 数组超长：截断 + `[truncated N items]`
+- 对象超键：保留前 N + `__truncated`
+- 嵌套超深：`[MaxDepth]`
+- 配置可覆盖：`opts` 与 `configureSerializer` 均能改默认值；per-call 仍能覆盖全局
 
 #### `never-throw.test.js`（永不抛错）
 - Proxy with throwing getter
 - `Object.defineProperty(obj, 'x', { get: () => { throw new Error() } })`
 - `toJSON: () => { throw new Error() }`
 - 抛错 + 循环 + 超深的组合用例
-- strict=false 时：返回占位符，调用 onError
-- strict=true 时：rethrow
+- strict=false 时：返回占位符，调用 onError；lossy 转换不触发 onError
+- strict=true 时：rethrow；lossy 转换仍不抛
 
-#### `revive-error.test.js`（错误还原）
-- main 抛 TypeError，preload reviveError 后 `instanceof Error === true`
+#### `revive-error.test.js`（preload 端 Error 还原）
+- main 抛 TypeError，reviveError 后 `instanceof TypeError === true`
 - name / message / stack / code 字段保留
-- cause 嵌套还原
+- cause 递归还原
+- 未知 name 回退到 `Error` 但保留 `name` 字段
+- 落空字符串 / null 输入 → `new Error(String(input))`
 
-#### `ipc-integration.test.js`（集成）
-- mock `ipcMain.handle` / `ipcRenderer.invoke`
-- handler return 各种"以前会崩"的值（含函数、循环、Date、Map），渲染端收到 plain 数据
-- handler 抛 Error，渲染端 reviveError 拿到 Error 实例
-- `broadcast(data)` 中包含不可克隆字段时不抛、渲染端收到清洗后数据
-- 同步路径（sendSync）覆盖
+#### `service-main.test.js`（Service main 集成）
+- handler return 经 `serialize(..., { strict: false })`，函数 / Date 等被清洗
+- handler 抛 Error：异步路径包装为 `throw new Error(JSON.stringify(serialize(err)))`；同步路径输出 `__ipcError` 信封 + serialized err
+
+#### `service-preload.test.js`（Service preload 集成）
+- invoke / sendSync 入参经 serialize 兜底
+- main 抛错时通过正则解析远端 message 中尾部 JSON，再用 reviveError 还原为 Error 实例（异步路径）
+- 同步路径检测 `__ipcError` 信封后 reviveError 还原
+- 不可解析的远端错误透传不丢
+
+#### `notice-main.test.js`（Notice 集成）
+- broadcast / direct 的 data 经 serialize 兜底（不 mock `schema.js`，直接复用 `system.networkDisconnected` / `update.progress` 内置事件）
 
 ### 9.3 完成定义
 
