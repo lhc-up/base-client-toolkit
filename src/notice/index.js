@@ -2,20 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const schema = require('./schema');
 const { ipcMain, BrowserWindow } = require('electron');
+const { serialize } = require('../shared/serializer');
 
 let registeredNamespaces = new Map();
 let noticeSchemas = [...schema];
 
-function init(options={}) {
+function init(options = {}) {
     for (const notice of schema) {
         registerEvents(notice.namespace, notice.events);
     }
 
     ipcMain.on('notice:getSchema', event => {
-        event.returnValue = getSchema();
+        event.returnValue = serialize(getSchema(), { strict: false });
     });
 
-    // 扫描用户 notices 目录
     if (options?.userNoticeDir) {
         scanUserNotices(options.userNoticeDir);
     }
@@ -30,14 +30,13 @@ function registerEvents(namespace, events) {
 
 function scanUserNotices(dir) {
     const files = fs.readdirSync(dir);
-
     for (const file of files) {
         if (!file.endsWith('.js')) continue;
         const notice = require(path.join(dir, file));
         registerEvents(notice.namespace, notice.events);
         noticeSchemas.push({
             namespace: notice.namespace,
-            events: notice.events
+            events: notice.events,
         });
     }
 }
@@ -53,9 +52,9 @@ function broadcast(event, data) {
             `[Base] 事件 "${event}" broadcast=true 才能使用 broadcast()`
         );
     }
-    // 发送给所有窗口
+    const safeData = serialize(data, { strict: false });
     for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send('notice:event', event, data);
+        win.webContents.send('notice:event', event, safeData);
     }
 }
 
@@ -70,9 +69,10 @@ function direct(event, windowId, data) {
             `[Base] 事件 "${event}" broadcast=false 才能使用 direct()`
         );
     }
+    const safeData = serialize(data, { strict: false });
     const win = BrowserWindow.fromId(windowId);
     if (win) {
-        win.webContents.send('notice:event', event, data);
+        win.webContents.send('notice:event', event, safeData);
     }
 }
 
@@ -80,8 +80,8 @@ function getSchema() {
     return noticeSchemas;
 }
 
-function cleanupWindow(windowId) {
-    // 窗口关闭时清理订阅（由主进程调用）
+function cleanupWindow(_windowId) {
+    // 窗口关闭时清理订阅（由主进程调用，目前无逻辑）
 }
 
 module.exports = { init, broadcast, direct, getSchema, cleanupWindow };
