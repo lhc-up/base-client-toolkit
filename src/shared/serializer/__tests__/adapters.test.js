@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import * as ad from '../adapters.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const ad = require('../adapters.js');
 
 describe('adapters type predicates', () => {
     it('isPlainObject true for {}', () => {

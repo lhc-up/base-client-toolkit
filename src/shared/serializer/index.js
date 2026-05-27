@@ -1,6 +1,6 @@
-import * as ph from './placeholders.js';
-import * as ad from './adapters.js';
-import { resolveOpts, configureSerializer } from './limits.js';
+const ph = require('./placeholders');
+const ad = require('./adapters');
+const { resolveOpts, configureSerializer } = require('./limits');
 
 function serialize(value, opts) {
     const finalOpts = resolveOpts(opts);
@@ -143,5 +143,4 @@ function safeStringify(value, opts) {
     }
 }
 
-export { serialize, safeStringify, configureSerializer };
-export default { serialize, safeStringify, configureSerializer };
+module.exports = { serialize, safeStringify, configureSerializer };

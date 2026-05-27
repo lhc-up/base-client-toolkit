@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { serialize } from '../index.js';
-import { _resetForTest, configureSerializer } from '../limits.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { serialize } = require('../index.js');
+const { _resetForTest, configureSerializer } = require('../limits.js');
 
 describe('serialize limits', () => {
     beforeEach(() => _resetForTest());

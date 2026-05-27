@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DEFAULTS, configureSerializer, resolveOpts, _resetForTest } from '../limits.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { DEFAULTS, configureSerializer, resolveOpts, _resetForTest } = require('../limits.js');
 
 describe('limits.resolveOpts', () => {
     beforeEach(() => _resetForTest());

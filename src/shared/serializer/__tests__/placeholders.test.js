@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import * as ph from '../placeholders.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const ph = require('../placeholders.js');
 
 describe('placeholders', () => {
     it('fnPlaceholder uses fn.name when present', () => {
