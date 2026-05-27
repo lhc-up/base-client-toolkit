@@ -8,6 +8,8 @@
     },
     "scripts": {
         "build": "rollup -c rollup.config.mjs",
+        "test": "vitest run",
+        "test:watch": "vitest",
         "prepublishOnly": "npm run build"
     },
     "keywords": [],
@@ -22,7 +24,8 @@
         "@rollup/plugin-json": "^6.1.0",
         "@rollup/plugin-node-resolve": "^16.0.0",
         "rollup": "^4.60.0",
-        "rollup-plugin-node-externals": "^8.1.2"
+        "rollup-plugin-node-externals": "^8.1.2",
+        "vitest": "^2.1.9"
     },
     "dependencies": {
         "fs-extra": "^11.3.5",
