@@ -36,7 +36,6 @@ function serialize(value, opts) {
         if (depth >= finalOpts.maxDepth) return ph.maxDepthPlaceholder();
 
         if (seen.has(v)) return ph.circularPlaceholder(seen.get(v));
-        seen.set(v, path);
 
         try {
             if (v instanceof Date) return ad.adaptDate(v);
@@ -48,8 +47,14 @@ function serialize(value, opts) {
             if (typeof WeakSet !== 'undefined' && v instanceof WeakSet) return ph.weakSetPlaceholder();
             if (ad.isWindowLike(v)) return ph.windowPlaceholder();
             if (ad.isDomNode(v)) return ph.domPlaceholder(v);
-            if (v instanceof Map) return ad.adaptMap(v, (x) => walk(x, depth + 1, path));
-            if (v instanceof Set) return ad.adaptSet(v, (x) => walk(x, depth + 1, path));
+            if (v instanceof Map) {
+                seen.set(v, path);
+                return ad.adaptMap(v, (x) => walk(x, depth + 1, path));
+            }
+            if (v instanceof Set) {
+                seen.set(v, path);
+                return ad.adaptSet(v, (x) => walk(x, depth + 1, path));
+            }
         } catch (e) {
             reportError(`adapter threw: ${e.message}`, path);
         }
@@ -74,6 +79,7 @@ function serialize(value, opts) {
     }
 
     function walkArray(arr, depth, path) {
+        seen.set(arr, path);
         const limit = finalOpts.maxArrayLength;
         const out = [];
         const len = Math.min(arr.length, limit);
@@ -104,6 +110,7 @@ function serialize(value, opts) {
             return ph.unserializablePlaceholder(e.message);
         }
         if (skipToJSON) keys = keys.filter((k) => k !== 'toJSON');
+        seen.set(obj, path);
         const limit = finalOpts.maxKeys;
         const sliced = keys.slice(0, limit);
         const out = {};

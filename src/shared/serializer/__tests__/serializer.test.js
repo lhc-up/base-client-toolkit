@@ -170,3 +170,47 @@ describe('serialize JSON-safety guarantee', () => {
         expect(() => JSON.stringify(serialize(weird))).not.toThrow();
     });
 });
+
+describe('serialize shared leaf references (not cycles)', () => {
+    beforeEach(() => _resetForTest());
+
+    it('same Date shared in two fields outputs ISO twice', () => {
+        const d = new Date('2026-01-01T00:00:00.000Z');
+        const out = serialize({ a: d, b: d });
+        expect(out.a).toBe('2026-01-01T00:00:00.000Z');
+        expect(out.b).toBe('2026-01-01T00:00:00.000Z');
+        expect(JSON.stringify(out.b)).not.toContain('Circular');
+    });
+
+    it('same Error shared in two fields outputs full both times', () => {
+        const e = new Error('boom');
+        const out = serialize({ a: e, b: e });
+        expect(out.a.message).toBe('boom');
+        expect(out.b.message).toBe('boom');
+    });
+
+    it('same RegExp shared', () => {
+        const r = /x/;
+        const out = serialize({ r1: r, r2: r });
+        expect(out.r1).toEqual({ source: 'x', flags: '' });
+        expect(out.r2).toEqual({ source: 'x', flags: '' });
+    });
+
+    it('same Buffer shared', () => {
+        const buf = Buffer.alloc(4);
+        const out = serialize({ b1: buf, b2: buf });
+        expect(out.b1).toBe('[Buffer: 4 bytes]');
+        expect(out.b2).toBe('[Buffer: 4 bytes]');
+    });
+
+    it('shared plain object IS still treated as cycle on second occurrence', () => {
+        // Two distinct fields referencing the same plain object:
+        // this IS a DAG, and current behavior is to treat the second
+        // occurrence as Circular (acceptable defensive default).
+        // This test pins down that intentional behavior.
+        const shared = { value: 1 };
+        const out = serialize({ a: shared, b: shared });
+        expect(out.a).toEqual({ value: 1 });
+        expect(out.b).toBe('[Circular: $.a]');
+    });
+});
