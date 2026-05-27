@@ -6,7 +6,7 @@ const { ipcMain, BrowserWindow } = require('electron');
 let registeredNamespaces = new Map();
 let noticeSchemas = [...schema];
 
-function init({ userNoticeDir }) {
+function init(options={}) {
     for (const notice of schema) {
         registerEvents(notice.namespace, notice.events);
     }
@@ -16,8 +16,8 @@ function init({ userNoticeDir }) {
     });
 
     // 扫描用户 notices 目录
-    if (userNoticeDir) {
-        scanUserNotices(userNoticeDir);
+    if (options?.userNoticeDir) {
+        scanUserNotices(options.userNoticeDir);
     }
 }
 

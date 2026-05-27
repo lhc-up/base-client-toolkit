@@ -7,7 +7,8 @@
         "./preload": "./dist/preload.js"
     },
     "scripts": {
-        "build": "rollup -c rollup.config.mjs"
+        "build": "rollup -c rollup.config.mjs",
+        "prepublishOnly": "npm run build"
     },
     "keywords": [],
     "author": "",
@@ -24,6 +25,8 @@
         "rollup-plugin-node-externals": "^8.1.2"
     },
     "dependencies": {
+        "fs-extra": "^11.3.5",
+        "lodash.isfunction": "^3.0.9",
         "lodash.merge": "^4.6.2"
     },
     "files": [

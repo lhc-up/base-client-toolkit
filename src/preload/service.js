@@ -5,6 +5,7 @@ const { ipcRenderer } = require('electron');
  */
 function buildAppService() {
     const serviceSchema = ipcRenderer.sendSync('service:getServiceList');
+    console.log('serviceSchema', serviceSchema)
     const appService = {};
 
     for (const service of serviceSchema) {
@@ -19,7 +20,7 @@ function buildAppService() {
 
             // 同步调用
             appService[namespace][`${handler}Sync`] = (...args) => {
-                return ipcRenderer.sendSync(`${namespace}:${handler}`, ...args);
+                return ipcRenderer.sendSync(`${namespace}:${handler}Sync`, ...args);
             };
         }
     }
