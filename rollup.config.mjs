@@ -23,6 +23,7 @@ export default [
             entryFileNames: '[name].js',
             chunkFileNames: '[name]-[hash].js'
         },
+        external: ['electron'],
         plugins: [
             nodeExternals({
                 devDeps: true,      // 排除所有 devDependencies
