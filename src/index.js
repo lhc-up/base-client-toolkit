@@ -5,8 +5,8 @@ const shared = require('./shared');
 
 module.exports = {
     // 初始化
-    initService: Service.init,
-    initNotice: Notice.init,
+    Service,
+    Notice,
 
     // 核心类
     BaseWindow,
