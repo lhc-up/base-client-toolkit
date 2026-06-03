@@ -35,7 +35,7 @@ toolkit 不是统一运行时框架，也不向用户运行时代码注入任何
 
 - **Electron 对象增强约定**（`enhance/` 命名空间）：约定 Electron 既有对象（`BrowserWindow` / `app` / `Menu` / `Tray` 等）的封装/抽象模块归此命名空间。BaseWindow 是其中第一个。
 
-- **根入口聚合（便利层）**：`./` 暴露 `{ Service, Notice, BaseWindow, shared, VERSION }`，供快速接入。subpath（`./service`、`./enhance/window/BaseWindow` 等）仍是按需精确导入的主要通道；根入口只是聚合引用，不触发任何 init / IPC 注册。
+- **根入口聚合（便利层）**：`./` 暴露 `{ Service, Notice, BaseWindow, shared, VERSION }`，供快速接入。subpath（`./service`、`./enhance/BaseWindow` 等）仍是按需精确导入的主要通道；根入口只是聚合引用，不触发任何 init / IPC 注册。
 
 - **preload 聚合入口**：`./preload` 提供一行 `init()` 把所有桥接机制（Service / Notice）的渲染端 API 一次性安全暴露（统一承担 `contextBridge.exposeInMainWorld` 样板）。
 
@@ -56,9 +56,8 @@ src/
 │   ├── preload.js
 │   └── protocol.js
 ├── capability/              # 主端能力命名空间
-├── enhance/                 # Electron 对象增强命名空间
-│   └── window/
-│       └── BaseWindow.js
+├── enhance/                 # Electron 对象增强命名空间（内部组织自由）
+│   └── BaseWindow.js
 ├── index.js                 # 根入口（便利层：聚合主端模块导出）
 └── preload.js               # preload 聚合入口（contextBridge 样板 + 装配桥接的渲染端 API）
 ```
@@ -78,7 +77,7 @@ src/
 
 - 具备主端 + preload 双侧的模块（`service/` / `notice/`）：入口为 `main.js`（主端）与 `preload.js`（preload 侧），配套 `protocol.js` 集中协议契约。
 - 仅有单侧入口的模块（`shared/serializer/`、`capability/<name>/`）：入口为 `index.js`（Node 惯例）。
-- 单类导出的增强模块（如 `enhance/window/BaseWindow.js`）：文件名即类名，不另设 `index.js`。
+- 单类导出的增强模块（如 `enhance/BaseWindow.js`）：文件名即类名，不另设 `index.js`。`enhance/` 内部组织自由——简单的单类直接放 `enhance/<Name>.js`，复杂模块（多文件）可用子目录。
 
 规则：**双侧用语义命名（`main` / `preload`），单侧用 Node 惯例（`index`）**。
 
@@ -95,7 +94,7 @@ src/
 | **M1** | serializer | `shared/serializer/` | 纯函数库 | `2026-05-27-ipc-serializer-design.md`（已有） |
 | **M2** | Service | `service/` | main + preload + protocol | 待新增 |
 | **M3** | Notice | `notice/` | main + preload + protocol | 待新增 |
-| **M4** | BaseWindow | `enhance/window/` | 仅 main | 待新增 |
+| **M4** | BaseWindow | `enhance/` | 仅 main | 待新增 |
 | **M5** | 主端能力模块接入约定 + 参考示例 | `capability/` | 契约文档 + 最小示例代码 | 待新增 |
 
 ## 五、模块依赖关系
@@ -121,7 +120,7 @@ src/
                  → window.appService / window.appNotice
 
 
-   enhance/window/BaseWindow (M4) ── 仅依赖 electron，无内部依赖
+   enhance/BaseWindow (M4) ── 仅依赖 electron，无内部依赖
 
    capability/ (M5 契约) ── 模块零依赖；其 serviceSchema / noticeSchema
                             在用户调 Service.init / Notice.init 时被消费
@@ -170,7 +169,7 @@ base-client-toolkit/docs/superpowers/specs/
 ├── 2026-05-27-ipc-serializer-design.md                 # M1 详细设计（已有）
 ├── 2026-06-03-toolkit-m2-service-design.md             # M2 详细设计
 ├── 2026-06-03-toolkit-m3-notice-design.md              # M3 详细设计
-├── YYYY-MM-DD-toolkit-m4-base-window-design.md         # M4 详细设计（待新增）
+├── 2026-06-03-toolkit-m4-base-window-design.md         # M4 详细设计
 └── 2026-06-03-toolkit-m5-capability-contract-design.md # M5 详细设计
 ```
 
