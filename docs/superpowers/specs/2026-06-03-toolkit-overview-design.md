@@ -161,7 +161,7 @@ base-client-toolkit/docs/superpowers/specs/
 ├── 2026-06-03-toolkit-overview-design.md               # 本总设计
 ├── 2026-05-27-ipc-serializer-design.md                 # M1 详细设计（已有）
 ├── 2026-06-03-toolkit-m2-service-design.md             # M2 详细设计
-├── YYYY-MM-DD-toolkit-m3-notice-design.md              # M3 详细设计（待新增）
+├── 2026-06-03-toolkit-m3-notice-design.md              # M3 详细设计
 ├── YYYY-MM-DD-toolkit-m4-base-window-design.md         # M4 详细设计（待新增）
 └── YYYY-MM-DD-toolkit-m5-capability-contract-design.md # M5 详细设计（待新增）
 ```
