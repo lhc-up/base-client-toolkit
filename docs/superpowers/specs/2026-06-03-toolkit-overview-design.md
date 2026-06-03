@@ -74,7 +74,15 @@ src/
 
 `src/index.js`（根入口聚合）与 `src/preload.js`（preload 聚合入口）是 **packaging 便利层**，不归任何分类目录——它们只汇出/装配下层模块，不持有任何逻辑、不引入新职责。
 
-新增模块的归属判定：
+### 入口文件命名约定
+
+- 具备主端 + preload 双侧的模块（`service/` / `notice/`）：入口为 `main.js`（主端）与 `preload.js`（preload 侧），配套 `protocol.js` 集中协议契约。
+- 仅有单侧入口的模块（`shared/serializer/`、`capability/<name>/`）：入口为 `index.js`（Node 惯例）。
+- 单类导出的增强模块（如 `enhance/window/BaseWindow.js`）：文件名即类名，不另设 `index.js`。
+
+规则：**双侧用语义命名（`main` / `preload`），单侧用 Node 惯例（`index`）**。
+
+### 新增模块的归属判定
 - 是新桥接通道？→ 升级到第一层（极少）。
 - 是渲染端没有的本地能力？→ 放 `capability/`。
 - 是 Electron 既有对象的封装/抽象？→ 放 `enhance/`。
@@ -163,7 +171,7 @@ base-client-toolkit/docs/superpowers/specs/
 ├── 2026-06-03-toolkit-m2-service-design.md             # M2 详细设计
 ├── 2026-06-03-toolkit-m3-notice-design.md              # M3 详细设计
 ├── YYYY-MM-DD-toolkit-m4-base-window-design.md         # M4 详细设计（待新增）
-└── YYYY-MM-DD-toolkit-m5-capability-contract-design.md # M5 详细设计（待新增）
+└── 2026-06-03-toolkit-m5-capability-contract-design.md # M5 详细设计
 ```
 
 > 本总设计是活文档。各模块详细设计若需调整模块边界或职责，应反过来更正本总设计，保持一致。
