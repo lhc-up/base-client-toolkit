@@ -174,3 +174,81 @@ base-client-toolkit/docs/superpowers/specs/
 ```
 
 > 本总设计是活文档。各模块详细设计若需调整模块边界或职责，应反过来更正本总设计，保持一致。
+
+## 八、包发布形态
+
+### 8.1 `package.json` `exports` 字段
+
+```json
+{
+  "exports": {
+    ".":                  "./dist/index.js",
+    "./preload":          "./dist/preload.js",
+    "./service":          "./dist/service/main.js",
+    "./service/preload":  "./dist/service/preload.js",
+    "./notice":           "./dist/notice/main.js",
+    "./notice/preload":   "./dist/notice/preload.js",
+    "./capability/*":     "./dist/capability/*/index.js",
+    "./enhance/*":        "./dist/enhance/*.js"
+  }
+}
+```
+
+要点：
+
+- 根入口 `.` 暴露便利层（`{ Service, Notice, BaseWindow, shared, VERSION }`）
+- 桥接机制 `./service` / `./notice` 与各自 `./preload` 子路径分别暴露 main 与 preload 侧
+- 通配符 `./capability/*` —— 新增 capability 模块 drop in 目录即生效，无需改 `package.json`（依赖 M5 §2.1 强制"目录 + `index.js`"形态）
+- 通配符 `./enhance/*` —— 覆盖直接单文件形态的 enhance 模块。若未来出现使用子目录形态的复杂 enhance 模块，需要补静态条目（如 `"./enhance/<group>/<name>": "..."`）
+- `./preload` 暴露聚合入口（详见 §8.2）
+
+### 8.2 preload 聚合入口契约
+
+`src/preload.js` 是 packaging 便利层，承担两个责任：
+
+1. **`contextBridge.exposeInMainWorld` 样板** —— 把桥接机制的 preload 子模块（M2 `service/preload.js` 与 M3 `notice/preload.js`）的输出安全暴露给渲染端
+2. **opt-out 装配** —— 用户可选择跳过某个 bridge，避免因主端未 `init` 而 `sendSync` 死锁
+
+#### 用户接触面
+
+```js
+// 默认装全部桥接（最常用）
+require('@base-client/toolkit/preload').init();
+
+// 等价：显式声明
+require('@base-client/toolkit/preload').init({ service: true, notice: true });
+
+// opt-out：用户主端只 init 了 Service，preload 端跳过 notice
+require('@base-client/toolkit/preload').init({ notice: false });
+```
+
+#### 实现草案
+
+```js
+const { contextBridge } = require('electron');
+const buildAppService = require('./service/preload');
+const buildAppNotice  = require('./notice/preload');
+
+function exposeAPI(name, api) {
+    if (process.contextIsolated) {
+        contextBridge.exposeInMainWorld(name, api);
+    } else {
+        window[name] = api;
+    }
+}
+
+function init(opts = {}) {
+    const { service = true, notice = true } = opts;
+    if (service) exposeAPI('appService', buildAppService());
+    if (notice)  exposeAPI('appNotice',  buildAppNotice());
+}
+
+module.exports = { init };
+```
+
+#### 关键契约
+
+- **若主端未 init Service / Notice，preload 端必须在 opts 中 opt-out 对应 bridge**（设为 `false`）——否则 `buildAppService` / `buildAppNotice` 内的 `sendSync` 元通道因无 listener 而**永久阻塞渲染进程**（`ipcRenderer.sendSync` 无原生 timeout 机制）
+- `init()` 应**只调用一次**——同名 `exposeInMainWorld` 二次调用会抛错。重复调用属违规，不做防护
+- 未来新增桥接机制（极少）才会扩展 opts 字段；capability / enhance 模块**永远不通过聚合入口暴露**——它们无 preload 侧
+- `exposeAPI` **不对外导出**——是 packaging 便利层的内部样板。用户若需暴露自定义 bridge，直接调 Electron 原生 `contextBridge.exposeInMainWorld`
