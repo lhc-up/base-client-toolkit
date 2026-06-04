@@ -4,7 +4,7 @@
 
 ## 一、定位
 
-M3 Notice 是 toolkit 的 **IPC 单向推送桥接机制**——主进程向渲染进程发送事件，渲染进程订阅消费。它定义事件 schema 协议、`broadcast` / `direct` API 与 preload 端的动态 `appNotice` 接口，让用户用声明式 schema 描述要暴露的事件,无需手写 `webContents.send` / `ipcRenderer.on`。
+M3 Notice 是 toolkit 的 **IPC 单向推送桥接机制**——主进程向渲染进程发送事件，渲染进程订阅消费。它定义事件 schema 协议、`broadcast` / `direct` API 与 preload 端的动态 `appNotice` 接口，让用户用声明式 schema 描述要暴露的事件，无需手写 `webContents.send` / `ipcRenderer.on`。
 
 M3 是**纯机制层**：
 

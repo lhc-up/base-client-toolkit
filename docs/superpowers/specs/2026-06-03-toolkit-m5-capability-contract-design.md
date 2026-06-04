@@ -35,13 +35,13 @@ module.exports = {
     ...
 
     // —— 可选 schema 字段 —— 供用户 mount 到 Service / Notice ——
-    serviceSchema: {            // 形态由 M2 Service 定义（§2.1）
+    serviceSchema: {            // 形态由 M2 Service 定义
         namespace: '<name>',
         handlers: { ... },
         sync?: [...],
         needsEvent?: [...],
     },
-    noticeSchema: {             // 形态由 M3 Notice 定义（§2.1）
+    noticeSchema: {             // 形态由 M3 Notice 定义
         namespace: '<name>',
         events: [...],
     },

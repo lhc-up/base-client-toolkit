@@ -91,11 +91,11 @@ src/
 
 | # | 模块 | 位置 | 形态 | 详细设计文档 |
 |---|---|---|---|---|
-| **M1** | serializer | `shared/serializer/` | 纯函数库 | `2026-05-27-ipc-serializer-design.md`（已有） |
-| **M2** | Service | `service/` | main + preload + protocol | 待新增 |
-| **M3** | Notice | `notice/` | main + preload + protocol | 待新增 |
-| **M4** | BaseWindow | `enhance/` | 仅 main | 待新增 |
-| **M5** | 主端能力模块接入约定 + 参考示例 | `capability/` | 契约文档 + 最小示例代码 | 待新增 |
+| **M1** | serializer | `shared/serializer/` | 纯函数库 | `2026-05-27-toolkit-m1-serializer-design.md` |
+| **M2** | Service | `service/` | main + preload + protocol | `2026-06-03-toolkit-m2-service-design.md` |
+| **M3** | Notice | `notice/` | main + preload + protocol | `2026-06-03-toolkit-m3-notice-design.md` |
+| **M4** | BaseWindow | `enhance/` | 仅 main | `2026-06-03-toolkit-m4-base-window-design.md` |
+| **M5** | 主端能力模块接入约定 + 参考示例 | `capability/` | 契约文档 + 最小示例代码 | `2026-06-03-toolkit-m5-capability-contract-design.md` |
 
 ## 五、模块依赖关系
 
@@ -166,7 +166,7 @@ M4 草案 → 确认 → spec → review     │ (M5 / M4 与彼此独立)
 ```
 base-client-toolkit/docs/superpowers/specs/
 ├── 2026-06-03-toolkit-overview-design.md               # 本总设计
-├── 2026-05-27-ipc-serializer-design.md                 # M1 详细设计（已有）
+├── 2026-05-27-toolkit-m1-serializer-design.md          # M1 详细设计
 ├── 2026-06-03-toolkit-m2-service-design.md             # M2 详细设计
 ├── 2026-06-03-toolkit-m3-notice-design.md              # M3 详细设计
 ├── 2026-06-03-toolkit-m4-base-window-design.md         # M4 详细设计

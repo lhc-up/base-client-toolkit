@@ -52,11 +52,9 @@ src/
         never-throw.test.js
         revive-error.test.js
         ipc-integration.test.js
-  service/index.js      - 主进程，handler return 值和抛错经 serialize
-  notice/index.js       - 主进程，broadcast/direct 的 data 经 serialize
-  preload/service.js    - invoke / sendSync 的 args 经 serialize
-  preload/notice.js     - 目前仅接收，暂无清洗点（保留位置以备扩展）
 ```
+
+serializer 被 M2 / M3 在垂直切片内引用（`src/service/main.js` / `src/service/preload.js` / `src/notice/main.js` / `src/notice/preload.js`），M5 capability 模块按需引用。具体调用点详见 §6 数据流。
 
 **关键决策**：
 - serializer 是纯函数，无副作用，不依赖 electron，可在 main / preload / renderer 任何环境运行。
@@ -95,72 +93,80 @@ const { serialize, safeStringify, configureSerializer } =
 
 ### 5.2 IPC 自动清洗（无新 API，行为变更）
 
-- `Service.registerService` 内部：handler return 值 / 抛出的 Error 自动 `serialize`
-- `Notice.broadcast` / `Notice.direct` 内部：`data` 自动 `serialize`
-- `appService[ns][handler](...args)` 同步与异步：`args` 自动 `serialize`
+- M2 Service 内部：handler return 值 / 抛出的 Error 自动 `serialize`
+- M3 Notice `broadcast` / `direct` 内部：`data` 自动 `serialize`
+- M2 Service preload 端：`appService[ns][handler](...args)` 同步与异步都对 `args` 自动 `serialize`
 
 业务代码零修改。
 
 ### 5.3 错误对象处理收编
 
-替换 `service/index.js` 当前手写的 `__ipcError` 逻辑：
+M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, error? }`（详见 M2 §3.2 / M3 §3.3）：
 
 - main 端 handler 抛错时，统一走 `serialize(err)` 产生 `{ name, message, stack, code?, cause? }`
-- 异步路径：包成新 Error 抛出（message 是 JSON.stringify 后的 serialized err）
-- 同步路径：`event.returnValue = { __ipcError: true, ...serialized }`
-- preload 端通过 `reviveError(serialized)` 把数据还原为 Error 实例
+- **主端永不 throw**：异步与同步路径都包成统一信封 `{ ok: false, error: <serialize(err)> }` 返回（异步 `ipcMain.handle` 回调 return 信封；同步 `event.returnValue` 赋信封）
+- preload 端检查信封 `ok` 字段，`false` 时用 `reviveError(envelope.error)` 还原为 Error 实例后 throw
 - 渲染进程业务侧 `catch` 拿到的是真正的 Error 实例
 
 ## 6. 数据流
 
-四条路径覆盖全部 IPC 场景。每条路径最多两次 `serialize`，分别在不同进程。
+四条路径覆盖全部 IPC 场景。每条路径最多两次 `serialize`，分别在不同进程。handler 签名细节（`needsEvent` opt-in / `sync` 列表）详见 M2 §2.1，本节仅展示 serializer 调用点。
 
 ### 路径 ① Service 异步（renderer → main → renderer）
 
 ```
 [renderer 业务] appService.foo.bar(rawArgs)
    │
-[preload/service.js]
-   const safeArgs = serialize(rawArgs)         ◄── 清洗点 A：入参
-   ipcRenderer.invoke('foo:bar', ...safeArgs)
+[preload: service/preload.js]
+   const safeArgs = rawArgs.map(a => serialize(a))   ◄── 清洗点 A：入参
+   const envelope = await ipcRenderer.invoke('foo:bar', ...safeArgs)
+   if (envelope.ok) return envelope.data
+   else throw reviveError(envelope.error)
    │
-[main: service/index.js]
-   try { result = await handler(...safeArgs, event) }
-     └── return serialize(result)              ◄── 清洗点 B：出参
-   catch (err) { throw new Error(JSON.stringify(serialize(err))) }
-                                                ◄── 清洗点 C：错误
-   │
-[renderer] invoke promise resolve / reject (reviveError)
+[main: service/main.js] —— 永不 throw
+   try {
+     const result = await handler(...safeArgs)
+     return { ok: true, data: serialize(result) }      ◄── 清洗点 B：出参
+   } catch (err) {
+     return { ok: false, error: serialize(err) }       ◄── 清洗点 C：错误
+   }
 ```
 
 ### 路径 ② Service 同步（`sendSync`）
 
 ```
-[preload] const safeArgs = serialize(rawArgs)
-          ipcRenderer.sendSync(syncChannel, ...safeArgs)
-[main]    try { result = handler(...) }
-            ├── event.returnValue = serialize(result)
-          catch (err)
-            └── event.returnValue = { __ipcError: true, ...serialize(err) }
-[preload] 收到后检查 __ipcError，命中则 reviveError + throw
+[preload] const safeArgs = rawArgs.map(a => serialize(a))
+          const envelope = ipcRenderer.sendSync(syncChannel, ...safeArgs)
+          if (envelope.ok) return envelope.data
+          else throw reviveError(envelope.error)
+[main]    try {
+            const result = await handler(...)
+            event.returnValue = { ok: true, data: serialize(result) }
+          } catch (err) {
+            event.returnValue = { ok: false, error: serialize(err) }
+          }
 ```
+
+异步与同步路径**协议同构**——都用 `{ ok, data?, error? }` 信封，preload 端解包逻辑只有一条。
 
 ### 路径 ③ Notice 广播（main → renderers）
 
 ```
 [main] broadcast(event, rawData) / direct(event, winId, rawData)
-       const safeData = serialize(rawData)     ◄── 清洗点 D
+       const safeData = serialize(rawData)             ◄── 清洗点 D
        win.webContents.send('notice:event', event, safeData)
 ```
 
-### 路径 ④ schema 查询
+推送通道**不走信封**——单向流无返回值、无错误回路（详见 M3 §3.2）。
+
+### 路径 ④ schema 元通道查询
 
 ```
-[main] event.returnValue = serialize(getServiceList())  ◄── 清洗点 E
-       event.returnValue = serialize(getSchema())        ◄── notice 端同理
+[main service]  event.returnValue = { ok: true, data: serialize(getServiceList()) }   ◄── 清洗点 E
+[main notice]   event.returnValue = { ok: true, data: serialize(getSchema()) }
 ```
 
-防御性清洗，确保未来 schema 扩展出非 plain 字段时不会崩。
+元通道与异步 / 同步 handler 通道共用同一信封形态，preload 端 `if (envelope.ok)` 解包路径完全一致。防御性清洗，确保未来 schema 扩展出非 plain 字段时不会崩。
 
 ### 不清洗的地方
 
@@ -352,17 +358,19 @@ serialize({ a: shared, b: shared })
 - 落空字符串 / null 输入 → `new Error(String(input))`
 
 #### `service-main.test.js`（Service main 集成）
-- handler return 经 `serialize(..., { strict: false })`，函数 / Date 等被清洗
-- handler 抛 Error：异步路径包装为 `throw new Error(JSON.stringify(serialize(err)))`；同步路径输出 `__ipcError` 信封 + serialized err
+- handler return 经 `serialize(..., { strict: false })`，封装为 `{ ok: true, data }` 信封返回
+- handler 抛 Error：异步与同步路径均返回 `{ ok: false, error: serialize(err) }` 信封，main 端**永不 throw**
+- 元通道 `service:getServiceList` 同样使用信封形态
 
 #### `service-preload.test.js`（Service preload 集成）
 - invoke / sendSync 入参经 serialize 兜底
-- main 抛错时通过正则解析远端 message 中尾部 JSON，再用 reviveError 还原为 Error 实例（异步路径）
-- 同步路径检测 `__ipcError` 信封后 reviveError 还原
-- 不可解析的远端错误透传不丢
+- 收到信封后检 `ok` 字段：`true` 返回 `data`；`false` 用 `reviveError(error)` 还原 Error 实例后 throw
+- 异步与同步路径解包逻辑完全一致
 
 #### `notice-main.test.js`（Notice 集成）
-- broadcast / direct 的 data 经 serialize 兜底（不 mock `schema.js`，直接复用 `system.networkDisconnected` / `update.progress` 内置事件）
+- broadcast / direct 的 data 经 serialize 兜底（推送通道直传 plain，不走信封）
+- 元通道 `notice:getSchema` 使用信封形态
+- 测试用临时挂载的用户 schema（M3 不带内置 schema）
 
 ### 9.3 完成定义
 
@@ -378,26 +386,3 @@ serialize({ a: shared, b: shared })
 - ❌ 自定义 Error 子类的还原（只还原 name/message/stack/code/cause，不还原原型链）
 - ❌ Renderer → Preload 方向的 Notice（当前不存在该路径）
 
-## 11. 迁移影响
-
-### 11.1 删除的依赖
-
-- `@ungap/structured-clone` —— 不再使用
-- `lodash.isfunction` —— 一行 `typeof === 'function'` 替代
-
-### 11.2 修改的代码
-
-- `src/service/index.js`：
-  - 删除当前 init 函数里的实验代码（39-47 行的 `serialize` 调试）
-  - 在 `ipcMain.handle` 和 `ipcMain.on(syncChannel)` 包装层加 serialize
-  - 收编 `__ipcError` 生成逻辑到统一序列化
-- `src/preload/service.js`：在 invoke / sendSync 调用前 serialize args；增加 reviveError 处理
-- `src/notice/index.js`：在 `broadcast` / `direct` 中 serialize data；schema 查询返回前 serialize
-- `src/preload/notice.js`：暂无修改（仅接收数据）
-- `src/shared/index.js`：导出 serializer 模块
-- `package.json`：删除两个旧依赖，新增 vitest 到 devDependencies；新增 test 脚本
-- `rollup.config.mjs`：无需修改。rollup 已配置 `chunkFileNames`，当 main 和 preload 同时引用 serializer 时会自动产出共享 chunk
-
-### 11.3 API 兼容
-
-`@base-client/toolkit` 当前 `version: 0.0.1`，未发布，无外部使用者。本次变更不需要兼容旧 API。
