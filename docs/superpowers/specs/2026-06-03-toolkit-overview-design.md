@@ -252,3 +252,8 @@ module.exports = { init };
 - `init()` 应**只调用一次**——同名 `exposeInMainWorld` 二次调用会抛错。重复调用属违规，不做防护
 - 未来新增桥接机制（极少）才会扩展 opts 字段；capability / enhance 模块**永远不通过聚合入口暴露**——它们无 preload 侧
 - `exposeAPI` **不对外导出**——是 packaging 便利层的内部样板。用户若需暴露自定义 bridge，直接调 Electron 原生 `contextBridge.exposeInMainWorld`
+
+### 8.3 依赖与运行时约束
+
+- `peerDependencies.electron`：`>=22.3.1`——最低支持版本；不上限，后续 Electron 升级若有破坏性改动单独再决策
+- toolkit 输出 `.d.ts` 类型定义（手写，与各模块 dist 产物配套）——覆盖 `Service.init` / `Notice.init/broadcast/direct` / `BaseWindow` 公开 API、`serviceSchema` / `noticeSchema` 形态、`appService` / `appNotice` 接触面

@@ -81,7 +81,7 @@ try {
 Service.cleanup();
 ```
 
-清空所有已注册的 IPC handler 与 listener。typically 在 Electron `app` 退出回调中调用，正常运行不需要。
+清空所有已注册的 IPC handler 与 listener。约定在 `app.on('will-quit', () => Service.cleanup())` 中调用——退出已确定、最后一次可同步运行清理代码的窗口；正常运行不需要主动调用。
 
 ## 三、Protocol
 
