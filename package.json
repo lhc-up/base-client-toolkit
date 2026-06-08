@@ -4,7 +4,13 @@
     "main": "dist/index.js",
     "exports": {
         ".": "./dist/index.js",
-        "./preload": "./dist/preload.js"
+        "./preload": "./dist/preload.js",
+        "./service": "./dist/service/main.js",
+        "./service/preload": "./dist/service/preload.js",
+        "./notice": "./dist/notice/main.js",
+        "./notice/preload": "./dist/notice/preload.js",
+        "./capability/*": "./dist/capability/*/index.js",
+        "./enhance/*": "./dist/enhance/*.js"
     },
     "scripts": {
         "build": "rollup -c rollup.config.mjs",
