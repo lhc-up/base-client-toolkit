@@ -26,10 +26,10 @@
         "electron": "22.3.1"
     },
     "devDependencies": {
+        "fs-extra": "^11.3.5",
         "vitest": "^2.1.9"
     },
     "dependencies": {
-        "fs-extra": "^11.3.5",
         "lodash.merge": "^4.6.2"
     },
     "files": [

@@ -21,4 +21,4 @@ function init(opts = {}) {
     if (notice) exposeAPI('appNotice', buildAppNotice());
 }
 
-module.exports = { init };
+module.exports = { init, exposeAPI };

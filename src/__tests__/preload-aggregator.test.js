@@ -50,6 +50,35 @@ afterAll(() => {
     }
 });
 
+describe('preload module exports', () => {
+    it('exports init and exposeAPI (per overview §8.2)', () => {
+        const { init, exposeAPI } = require('../preload');
+        expect(typeof init).toBe('function');
+        expect(typeof exposeAPI).toBe('function');
+    });
+
+    it('exposeAPI is the same internal helper used by init (contextIsolated path)', () => {
+        Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
+        const { exposeAPI } = require('../preload');
+        exposeAPI('myCustomBridge', { hello: 'world' });
+        expect(contextBridge.exposeInMainWorld).toHaveBeenCalledWith(
+            'myCustomBridge',
+            { hello: 'world' },
+        );
+    });
+
+    it('exposeAPI uses window fallback when not contextIsolated', () => {
+        Object.defineProperty(process, 'contextIsolated', { value: false, configurable: true });
+        global.window = { existing: 1 };
+        const { exposeAPI } = require('../preload');
+        exposeAPI('myBridge', { v: 2 });
+        expect(contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
+        expect(global.window.myBridge).toEqual({ v: 2 });
+        expect(global.window.existing).toBe(1);
+        delete global.window;
+    });
+});
+
 describe('preload aggregator: init()', () => {
     it('default opts: exposes both appService and appNotice', () => {
         // 模拟 contextIsolated 环境

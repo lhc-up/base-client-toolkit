@@ -243,7 +243,7 @@ function init(opts = {}) {
     if (notice)  exposeAPI('appNotice',  buildAppNotice());
 }
 
-module.exports = { init };
+module.exports = { init, exposeAPI };
 ```
 
 #### 关键契约
@@ -251,7 +251,7 @@ module.exports = { init };
 - **若主端未 init Service / Notice，preload 端必须在 opts 中 opt-out 对应 bridge**（设为 `false`）——否则 `buildAppService` / `buildAppNotice` 内的 `sendSync` 元通道因无 listener 而**永久阻塞渲染进程**（`ipcRenderer.sendSync` 无原生 timeout 机制）
 - `init()` 应**只调用一次**——同名 `exposeInMainWorld` 二次调用会抛错。重复调用属违规，不做防护
 - 未来新增桥接机制（极少）才会扩展 opts 字段；capability / enhance 模块**永远不通过聚合入口暴露**——它们无 preload 侧
-- `exposeAPI` **不对外导出**——是 packaging 便利层的内部样板。用户若需暴露自定义 bridge，直接调 Electron 原生 `contextBridge.exposeInMainWorld`
+- `exposeAPI` **对外导出**（`@base-client/toolkit/preload` 的 `exposeAPI`）——作为 packaging 便利层的对外辅助函数。内部对 `init` 重复使用其上下文隔离 / window 兜底分支处理；用户暴露自定义 bridge 时可直接复用，无需重写。Electron 原生 `contextBridge.exposeInMainWorld` 仍可独立调用
 
 ### 8.3 依赖与运行时约束
 
