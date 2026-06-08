@@ -47,6 +47,30 @@ class BaseWindow {
 
         return window;
     }
+
+    // —— 实例方法（不应 override） ——
+
+    getWindow() {
+        return this.browserWindow;
+    }
+
+    getId() {
+        return this.browserWindow ? this.browserWindow.id : undefined;
+    }
+
+    close() {
+        if (this.browserWindow) this.browserWindow.close();
+    }
+
+    isDestroyed() {
+        if (!this.browserWindow) return true;
+        return this.browserWindow.isDestroyed();
+    }
+
+    send(channel, data) {
+        if (!this.browserWindow) return;
+        this.browserWindow.webContents.send(channel, data);
+    }
 }
 
 module.exports = BaseWindow;
