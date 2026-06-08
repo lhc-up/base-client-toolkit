@@ -4,10 +4,16 @@
     "main": "dist/index.js",
     "exports": {
         ".": "./dist/index.js",
-        "./preload": "./dist/preload.js"
+        "./preload": "./dist/preload.js",
+        "./service": "./dist/service/main.js",
+        "./service/preload": "./dist/service/preload.js",
+        "./notice": "./dist/notice/main.js",
+        "./notice/preload": "./dist/notice/preload.js",
+        "./capability/*": "./dist/capability/*/index.js",
+        "./enhance/*": "./dist/enhance/*.js"
     },
     "scripts": {
-        "build": "rollup -c rollup.config.mjs",
+        "build": "node scripts/build.mjs",
         "test": "vitest run",
         "test:watch": "vitest",
         "prepublishOnly": "npm run build"
@@ -20,11 +26,6 @@
         "electron": "22.3.1"
     },
     "devDependencies": {
-        "@rollup/plugin-commonjs": "^28.0.0",
-        "@rollup/plugin-json": "^6.1.0",
-        "@rollup/plugin-node-resolve": "^16.0.0",
-        "rollup": "^4.60.0",
-        "rollup-plugin-node-externals": "^8.1.2",
         "vitest": "^2.1.9"
     },
     "dependencies": {
