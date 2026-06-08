@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+// IPC 路径必须永不抛错：strict=false 覆盖 dev 默认的 strict=true。
 const { serialize } = require('../shared/serializer');
 const { reviveError } = require('../shared/serializer/reviveError');
 const {
