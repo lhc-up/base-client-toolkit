@@ -36,6 +36,15 @@ class BaseWindow {
         );
         const window = new BrowserWindow(mergedOptions);
         this.browserWindow = window;
+
+        window.on('closed', () => {
+            this.browserWindow = null;
+            this.onClosed();
+        });
+
+        this.onCreated(window);
+        window.loadURL(this.getPageUrl());
+
         return window;
     }
 }
