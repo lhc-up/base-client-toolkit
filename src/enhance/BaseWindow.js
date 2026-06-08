@@ -25,6 +25,19 @@ class BaseWindow {
     onClosed() {
         // no-op
     }
+
+    // —— 模板方法 ——
+
+    create() {
+        const userOptions = this.getWindowOptions();
+        const mergedOptions = merge(
+            { show: false, backgroundColor: '#ffffff' },
+            userOptions,
+        );
+        const window = new BrowserWindow(mergedOptions);
+        this.browserWindow = window;
+        return window;
+    }
 }
 
 module.exports = BaseWindow;
