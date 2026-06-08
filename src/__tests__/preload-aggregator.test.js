@@ -2,9 +2,11 @@
 // 关键覆盖：opt-out 必须真正跳过 buildAppService/buildAppNotice 调用，
 // 否则 sendSync 元通道因无 listener 会阻塞渲染进程。
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
+
+const _originalContextIsolatedDescriptor = Object.getOwnPropertyDescriptor(process, 'contextIsolated');
 
 function buildElectronMock() {
     return {
@@ -38,6 +40,14 @@ beforeEach(() => {
     ipcRenderer.on.mockClear();
     // 默认让 sendSync 返回空 envelope（不抛错地完成）
     ipcRenderer.sendSync.mockReturnValue({ ok: true, data: [] });
+});
+
+afterAll(() => {
+    if (_originalContextIsolatedDescriptor) {
+        Object.defineProperty(process, 'contextIsolated', _originalContextIsolatedDescriptor);
+    } else {
+        delete process.contextIsolated;
+    }
 });
 
 describe('preload aggregator: init()', () => {
