@@ -34,9 +34,19 @@ describe('limits.resolveOpts', () => {
         expect(resolveOpts().onError).toBeNull();
     });
 
-    it('strict default reflects NODE_ENV', () => {
-        const r = resolveOpts();
-        const expected = process.env.NODE_ENV !== 'production';
-        expect(r.strict).toBe(expected);
+    it('strict default is hardcoded false (§7.2)', () => {
+        const r = resolveOpts({});
+        expect(r.strict).toBe(false);
+    });
+    it('strict default is not affected by NODE_ENV', () => {
+        const original = process.env.NODE_ENV;
+        try {
+            process.env.NODE_ENV = 'development';
+            expect(resolveOpts({}).strict).toBe(false);
+            process.env.NODE_ENV = 'production';
+            expect(resolveOpts({}).strict).toBe(false);
+        } finally {
+            process.env.NODE_ENV = original;
+        }
     });
 });
