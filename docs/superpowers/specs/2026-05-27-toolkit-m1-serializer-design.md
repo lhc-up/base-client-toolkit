@@ -4,6 +4,23 @@
 **项目**：`@base-client/toolkit`
 **目标**：统一处理主进程 / 渲染进程间 IPC 数据传递，避免不可克隆数据导致 Electron 报错；同时提供 logger 友好的序列化工具。
 
+## 落地文件
+
+- 入口：`src/shared/serializer/index.js`
+- 特殊类型适配：`src/shared/serializer/adapters.js`
+- 占位符生成：`src/shared/serializer/placeholders.js`
+- 上限配置：`src/shared/serializer/limits.js`
+- Error 还原：`src/shared/serializer/reviveError.js`
+
+## 依赖与被依赖
+
+**依赖：** 无（M1 是基础层）
+
+**被依赖：**
+- M2 Service（`src/service/main.js` / `src/service/preload.js`）—— 使用 `serialize` / `serializeForIpc` / `reviveError`
+- M3 Notice（`src/notice/main.js` / `src/notice/preload.js`）—— 使用 `serialize` / `serializeForIpc` / `reviveError`
+- 用户主端 / 渲染端业务代码（可选，logger 类场景）—— 使用 `serialize` / `safeStringify` / `configureSerializer`
+
 ## 1. 背景与需求
 
 `@base-client/toolkit` 是一个 Electron 客户端基础库，封装了主进程 ↔ 渲染进程的 IPC 通信（`Service`、`Notice`）。当前实现存在两个痛点：
@@ -44,7 +61,10 @@ src/
       placeholders.js   - 占位符生成
       limits.js         - 默认上限常量 + 全局配置
       reviveError.js    - 反序列化辅助（preload 端把 main 抛的 Error 还原成 Error 实例）
-      __tests__/
+
+tests/                    - 测试目录（架构 §10.6）
+  shared/
+    serializer/
         serializer.test.js
         adapters.test.js
         limits.test.js
@@ -80,7 +100,7 @@ const { serialize, safeStringify, configureSerializer } =
   - `maxStringLength`：默认 10240（10KB）
   - `maxArrayLength`：默认 1000
   - `maxKeys`：默认 1000
-  - `strict`：默认 `process.env.NODE_ENV !== 'production'`（**在模块加载时一次性求值**，运行时修改 `NODE_ENV` 不会改变默认；如需切换请显式 `configureSerializer({ strict })`）
+  - `strict`：默认 `false`（详见架构 §7.2）。如需在开发环境暴露序列化真 bug（Proxy 抛错 / toJSON 抛错等），主动 `configureSerializer({ strict: true })`。`configureSerializer` 全局默认是**每进程独立**的（详见架构 §7.6）。
   - `onError(reason, path)`：意外异常的回调钩子
 
 #### `safeStringify(value, opts?) → string`
@@ -101,14 +121,11 @@ const { serialize, safeStringify, configureSerializer } =
 
 ### 5.3 错误对象处理收编
 
-M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, error? }`（详见 M2 §3.2 / M3 §3.3）：
-
-- main 端 handler 抛错时，统一走 `serialize(err)` 产生 `{ name, message, stack, code?, cause? }`
-- **主端永不 throw**：异步与同步路径都包成统一信封 `{ ok: false, error: <serialize(err)> }` 返回（异步 `ipcMain.handle` 回调 return 信封；同步 `event.returnValue` 赋信封）
-- preload 端检查信封 `ok` 字段，`false` 时用 `reviveError(envelope.error)` 还原为 Error 实例后 throw
-- 渲染进程业务侧 `catch` 拿到的是真正的 Error 实例
+M2 Service 与 M3 Notice 的元通道及各响应通道统一使用信封 `{ ok, data?, error? }`（详见架构 §7.1）；主端 handler 永不 throw，所有错误经 `serializeForIpc(err)` 装信封返回（详见架构 §3.3 / §7.2）；preload 端用 `reviveError(envelope.error)` 还原为 Error 实例（`reviveError` 三层输入契约详见架构 §7.3）。`reviveError` 从 `shared/serializer.reviveError` 导出，作为 IPC 辅助工具族公开 API（架构 §7.3）。
 
 ## 6. 数据流
+
+M2 / M3 主端与 preload 所有 IPC 序列化调用点使用 `serializeForIpc()` 封装（详见架构 §7.2），本节路径中出现的 `serialize` 均指该封装。
 
 四条路径覆盖全部 IPC 场景。每条路径最多两次 `serialize`，分别在不同进程。handler 签名细节（`needsEvent` opt-in / `sync` 列表）详见 M2 §2.1，本节仅展示 serializer 调用点。
 
@@ -118,7 +135,7 @@ M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, erro
 [renderer 业务] appService.foo.bar(rawArgs)
    │
 [preload: service/preload.js]
-   const safeArgs = rawArgs.map(a => serialize(a))   ◄── 清洗点 A：入参
+   const safeArgs = rawArgs.map(a => serializeForIpc(a))   ◄── 清洗点 A：入参
    const envelope = await ipcRenderer.invoke('foo:bar', ...safeArgs)
    if (envelope.ok) return envelope.data
    else throw reviveError(envelope.error)
@@ -126,24 +143,24 @@ M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, erro
 [main: service/main.js] —— 永不 throw
    try {
      const result = await handler(...safeArgs)
-     return { ok: true, data: serialize(result) }      ◄── 清洗点 B：出参
+     return { ok: true, data: serializeForIpc(result) }      ◄── 清洗点 B：出参
    } catch (err) {
-     return { ok: false, error: serialize(err) }       ◄── 清洗点 C：错误
+     return { ok: false, error: serializeForIpc(err) }       ◄── 清洗点 C：错误
    }
 ```
 
 ### 路径 ② Service 同步（`sendSync`）
 
 ```
-[preload] const safeArgs = rawArgs.map(a => serialize(a))
+[preload] const safeArgs = rawArgs.map(a => serializeForIpc(a))
           const envelope = ipcRenderer.sendSync(syncChannel, ...safeArgs)
           if (envelope.ok) return envelope.data
           else throw reviveError(envelope.error)
 [main]    try {
             const result = await handler(...)
-            event.returnValue = { ok: true, data: serialize(result) }
+            event.returnValue = { ok: true, data: serializeForIpc(result) }
           } catch (err) {
-            event.returnValue = { ok: false, error: serialize(err) }
+            event.returnValue = { ok: false, error: serializeForIpc(err) }
           }
 ```
 
@@ -153,7 +170,7 @@ M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, erro
 
 ```
 [main] broadcast(event, rawData) / direct(event, winId, rawData)
-       const safeData = serialize(rawData)             ◄── 清洗点 D
+       const safeData = serializeForIpc(rawData)             ◄── 清洗点 D
        win.webContents.send('notice:event', event, safeData)
 ```
 
@@ -162,8 +179,8 @@ M2 Service 与 M3 Notice 的元通道统一使用信封协议 `{ ok, data?, erro
 ### 路径 ④ schema 元通道查询
 
 ```
-[main service]  event.returnValue = { ok: true, data: serialize(getServiceList()) }   ◄── 清洗点 E
-[main notice]   event.returnValue = { ok: true, data: serialize(getSchema()) }
+[main service]  event.returnValue = { ok: true, data: serializeForIpc(getServiceList()) }   ◄── 清洗点 E
+[main notice]   event.returnValue = { ok: true, data: serializeForIpc(getSchema()) }
 ```
 
 元通道与异步 / 同步 handler 通道共用同一信封形态，preload 端 `if (envelope.ok)` 解包路径完全一致。防御性清洗，确保未来 schema 扩展出非 plain 字段时不会崩。
@@ -252,12 +269,12 @@ serialize({ a: shared, b: shared })
 
 | 模式 | 默认 | 行为 |
 |---|---|---|
-| `strict: true` | 开发期默认（`NODE_ENV !== 'production'`） | 直接 `throw` |
-| `strict: false` | 生产期默认 | 占位符 `"[Unserializable: <reason>]"` + 调用 `onError(reason, path)` |
+| `strict: true` | 非默认，需显式开启 | 直接 `throw` |
+| `strict: false` | 默认（详见架构 §7.2） | 占位符 `"[Unserializable: <reason>]"` + 调用 `onError(reason, path)` |
 
 ### 8.2 关键不变量
 
-- **IPC 路径在生产环境永不抛错**：库内部调用 serializer 时硬编码 `strict: false`，不受全局 strict 配置影响。生产环境无论怎样不会因序列化失败让 IPC 崩。
+- **IPC 路径在生产环境永不抛错** —— 通过 `serializeForIpc()` 封装承担（详见架构 §7.2 / §3.3）。业务代码零手动 `{ strict: false }` 传参。
 - **`serialize` / `safeStringify` 工具受全局 strict 影响**：业务自己调用时按全局配置走，开发期 strict 暴露真 bug。
 - **lossy 转换永远不触发 `onError`**：只有真正的"代码出 bug"才进 onError 通道。
 
