@@ -2,6 +2,23 @@
 
 > 所属：[Toolkit 总设计](./2026-06-03-toolkit-overview-design.md) 的 M2 模块。
 
+## 落地文件
+
+- 主端入口：`src/service/main.js`
+- preload 入口：`src/service/preload.js`
+- 私有协议：`src/service/protocol.js`（channel 命名等模块私有常量；envelope 已上收 `shared/envelope`，详见架构 §7.7）
+
+## 依赖与被依赖
+
+**依赖：**
+- M1 shared/serializer —— `serialize` / `serializeForIpc` / `reviveError`
+- shared/envelope（架构 §7.1）—— `okEnvelope` / `errorEnvelope`
+- shared/naming（架构 §7.4）—— `isValidIdentifier`
+- electron —— `ipcMain` (main) / `ipcRenderer` (preload)
+
+**被依赖：**
+- M5 capability 契约（文档级）—— 引用 `serviceSchema` 形态与 `validateServiceSchema`
+
 ## 一、定位
 
 M2 Service 是 toolkit 的 **IPC 双向调用桥接机制**。它定义 渲染→主 调用的 IPC 协议和注册机制，让用户用声明式 schema 描述要暴露的 handler，无需手写 `ipcMain.handle` / `ipcRenderer.invoke`。
@@ -11,7 +28,7 @@ M2 是**纯机制层**：
 - 不持有任何业务逻辑——不带内置 schema，所有 handler 由用户挂载
 - 不依赖任何 capability / enhance 模块——反向解耦
 - 不向用户运行时代码注入全局状态——主端经 `init` 显式挂载、preload 经聚合入口显式 expose、渲染端 `window.appService` 仅是 `contextBridge` 暴露的纯数据接口
-- 唯一同向依赖：M1 `shared/serializer`（用于 IPC 编码/反编码 + 错误还原）
+- 唯一同向依赖：M1 `shared/serializer`（用于 IPC 编码/反编码 + 错误还原）及 `shared/envelope`（架构 §7.1）、`shared/naming`（架构 §7.4）。
 
 ## 二、用户接触面
 
@@ -40,7 +57,7 @@ Service.init({ userSchemas: [fooSchema /* , ... */] });
 - handler 名位列 schema 的 `needsEvent` 列表时，Service 调用形态变为 `handler(...callerArgs, event)`——`event` 是 Electron 的 `IpcMainInvokeEvent`，位于参数末位。
 - handler 名位列 `sync` 列表时**可以是同步或异步函数**——Service 会 `await` 异步 handler 再写 `returnValue`。但 **sync 通道会阻塞渲染进程直到响应返回**，handler 若 `await` 长耗时操作，渲染端会冻结相应时长。仅在能保证快速返回的场景使用 sync 通道。
 - **`rest-params` + `needsEvent`** 同用为**未支持组合**（event 会卷入 rest 中），需要 event 的 handler 应使用具名参数。
-- 同一 namespace 在所有挂载的 schema 中**全局唯一**，冲突时 `init` 抛错。
+- 同一 namespace 在所有挂载的 Service schema 中全局唯一，冲突时 `init` 抛错。命名口径与 handler 名字符规则详见架构 §3.7 / §7.4（namespace / handler 名 / event 名统一须为合法 JS 标识符 `/^[A-Za-z_][A-Za-z0-9_]*$/`；由 `validateServiceSchema` 承担运行时校验，详见架构 §7.5）。
 
 ### 2.2 Preload：经聚合入口暴露
 
@@ -95,16 +112,7 @@ Service.cleanup();
 
 ### 3.2 统一信封
 
-所有上述通道的响应数据使用同一信封：
-
-```js
-{ ok: true,  data:  <serialize(value)> }       // 成功
-{ ok: false, error: <serialize(error)> }       // 失败
-```
-
-主端 ipcMain.handle 的回调**永不 reject/throw**——所有错误都包成 `{ok: false, error}` 返回。这避免触发 Electron 内置错误包装（`Error invoking remote method ...`），保证 preload 端解析路径只有一种形态。
-
-`data` / `error` 字段均经 M1 `shared/serializer` 编码，保证 IPC 安全。
+Service 的异步 / 同步 / 元通道响应均使用统一信封 `{ ok, data?, error? }`（详见架构 §7.1）。`data` / `error` 字段均经 `serializeForIpc()` 编码（详见架构 §7.2）。主端 handler 永不 throw —— 详见架构 §3.3。
 
 ### 3.3 元通道 `service:getServiceList`
 
@@ -143,12 +151,11 @@ Service.init({ userSchemas: [schema1, schema2, ...] })
 
 ### 4.2 内部 `registerService`（不对外）
 
-对单个 schema：
+IPC 序列化统一经 `serializeForIpc()`（详见架构 §7.2）。
 
-1. **校验 namespace**：与已注册命名空间冲突 → 抛 `Service namespace "${ns}" 冲突`。
-2. **校验 `sync` 列表**：每项必须存在于 `handlers` 键名内，否则抛错。
-3. **校验 `needsEvent` 列表**：同上。
-4. **遍历 handler name**：
+`registerService(schema)` 内部调用 `validateServiceSchema(schema)`（M2 公开导出，详见架构 §7.5）完成 schema 形态与命名校验；校验通过后再检查 namespace 冲突（`registeredSchemas` 已存在则抛错）。校验失败抛错细节由 validateServiceSchema 定义。
+
+**遍历 handler name**：
    - **注册异步通道** `ipcMain.handle(asyncChannel(ns, name), ...)`：
      ```js
      async (event, ...args) => {
@@ -157,9 +164,9 @@ Service.init({ userSchemas: [schema1, schema2, ...] })
              const result = needsEvent.includes(name)
                  ? await fn(...args, event)
                  : await fn(...args);
-             return okEnvelope(serialize(result, { strict: false }));
+             return okEnvelope(serializeForIpc(result)); // envelope 形态详见架构 §7.1
          } catch (err) {
-             return errorEnvelope(serialize(err, { strict: false }));
+             return errorEnvelope(serializeForIpc(err));
          }
      }
      ```
@@ -172,9 +179,9 @@ Service.init({ userSchemas: [schema1, schema2, ...] })
              const result = await (
                  needsEvent.includes(name) ? fn(...args, event) : fn(...args)
              );
-             event.returnValue = okEnvelope(serialize(result, { strict: false }));
+             event.returnValue = okEnvelope(serializeForIpc(result)); // envelope 形态详见架构 §7.1
          } catch (err) {
-             event.returnValue = errorEnvelope(serialize(err, { strict: false }));
+             event.returnValue = errorEnvelope(serializeForIpc(err));
          }
      }
      ```
@@ -190,7 +197,7 @@ ipcMain.on(META_LIST_CHANNEL, event => {
         handlers:  Object.keys(s.handlers),
         sync:      s.sync || [],
     }));
-    event.returnValue = okEnvelope(serialize(list, { strict: false }));
+    event.returnValue = okEnvelope(serializeForIpc(list)); // envelope 形态详见架构 §7.1
 });
 ```
 
@@ -245,8 +252,9 @@ function buildAppService() {
 ```js
 function buildAsyncCaller(ns, name) {
     return async (...args) => {
-        const safeArgs = args.map(a => serialize(a, { strict: false }));
+        const safeArgs = args.map(a => serializeForIpc(a));
         const envelope = await ipcRenderer.invoke(asyncChannel(ns, name), ...safeArgs);
+        // envelope 形态详见架构 §7.1
         if (envelope.ok) return envelope.data;
         throw reviveError(envelope.error);
     };
@@ -258,8 +266,9 @@ function buildAsyncCaller(ns, name) {
 ```js
 function buildSyncCaller(ns, name) {
     return (...args) => {
-        const safeArgs = args.map(a => serialize(a, { strict: false }));
+        const safeArgs = args.map(a => serializeForIpc(a));
         const envelope = ipcRenderer.sendSync(syncChannel(ns, name), ...safeArgs);
+        // envelope 形态详见架构 §7.1
         if (envelope.ok) return envelope.data;
         throw reviveError(envelope.error);
     };
@@ -268,7 +277,7 @@ function buildSyncCaller(ns, name) {
 
 ### 5.5 渲染端参数序列化
 
-调用方传入的 args 在 IPC 之前经 `serialize` 编码，与主端 handler 返回值的序列化构成 **IPC 安全闭环**——任意一侧无意中放入不可克隆字段都不会让 IPC 崩，业务零修改。
+渲染端参数在 IPC 之前经 `serializeForIpc()` 编码，与主端 handler 返回值的序列化共同构成 IPC 安全闭环（详见架构 §7.2）。
 
 ## 六、模块边界
 
@@ -288,6 +297,8 @@ function buildSyncCaller(ns, name) {
 |---|---|---|
 | M2 主端 → M1 | `serialize` | 编码 handler 返回值 / 错误 / 元通道数据 |
 | M2 preload → M1 | `serialize` / `reviveError` | 编码 args；反序列化错误 |
+| M2 主/preload → shared/envelope | `okEnvelope` / `errorEnvelope` | 统一信封构造（详见架构 §7.1） |
+| M2 主/preload → shared/naming | `isValidIdentifier` | 命名合法性校验（详见架构 §7.4） |
 | M2 主端 → electron | `ipcMain.handle/on/removeHandler/removeAllListeners` | 通道注册与清理 |
 | M2 preload → electron | `ipcRenderer.invoke/sendSync` | IPC 调用 |
 
@@ -309,7 +320,7 @@ function buildSyncCaller(ns, name) {
 src/service/
 ├── main.js              # 主端入口
 ├── preload.js           # preload 入口
-└── protocol.js          # 协议契约：channel 命名 + 信封 + 元通道形状
+└── protocol.js          # channel 命名等模块私有协议（envelope 已上收 shared/envelope，详见架构 §7.7）
 ```
 
 ### 7.1 各文件职责
@@ -329,7 +340,7 @@ src/service/
 
 **`protocol.js`**
 
-通道命名与信封的**单一真理源**。`main.js` 与 `preload.js` 都从这里取，避免常量在两处各写一份漂移。
+channel 命名的**模块私有常量**。`main.js` 与 `preload.js` 都从这里取，避免常量在两处各写一份漂移。envelope 构造（`okEnvelope` / `errorEnvelope`）已上收至 `shared/envelope`（详见架构 §7.7），不在此文件定义。
 
 ```js
 // 草拟内容
@@ -338,15 +349,10 @@ const META_LIST_CHANNEL = 'service:getServiceList';
 const asyncChannel = (ns, name) => `${ns}:${name}`;
 const syncChannel  = (ns, name) => `${ns}:${name}Sync`;
 
-const okEnvelope    = data  => ({ ok: true,  data });
-const errorEnvelope = error => ({ ok: false, error });
-
 module.exports = {
     META_LIST_CHANNEL,
     asyncChannel,
     syncChannel,
-    okEnvelope,
-    errorEnvelope,
 };
 ```
 
