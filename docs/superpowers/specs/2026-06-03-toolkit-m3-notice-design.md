@@ -2,6 +2,23 @@
 
 > 所属：[Toolkit 总设计](./2026-06-03-toolkit-overview-design.md) 的 M3 模块。
 
+## 落地文件
+
+- 主端入口：`src/notice/main.js`
+- preload 入口：`src/notice/preload.js`
+- 私有协议：`src/notice/protocol.js`（channel 命名；envelope 已上收 `shared/envelope`，详见架构 §7.7）
+
+## 依赖与被依赖
+
+**依赖：**
+- M1 shared/serializer —— `serialize` / `serializeForIpc` / `reviveError`
+- shared/envelope（架构 §7.1）—— `okEnvelope` / `errorEnvelope`
+- shared/naming（架构 §7.4）—— `isValidIdentifier`
+- electron —— `ipcMain` / `BrowserWindow` (main) / `ipcRenderer` (preload)
+
+**被依赖：**
+- M5 capability 契约（文档级）—— 引用 `noticeSchema` 形态与 `validateNoticeSchema`
+
 ## 一、定位
 
 M3 Notice 是 toolkit 的 **IPC 单向推送桥接机制**——主进程向渲染进程发送事件，渲染进程订阅消费。它定义事件 schema 协议、`broadcast` / `direct` API 与 preload 端的动态 `appNotice` 接口，让用户用声明式 schema 描述要暴露的事件，无需手写 `webContents.send` / `ipcRenderer.on`。
@@ -12,7 +29,7 @@ M3 是**纯机制层**：
 - 不依赖任何 capability / enhance 模块——反向解耦
 - 不向用户运行时代码注入全局状态——主端经 `init` 显式挂载、preload 经聚合入口显式 expose
 - **主端无 per-window 订阅状态**——push 时通过 `BrowserWindow.getAllWindows()` / `fromId(id)` 直接定位目标
-- 同向依赖：M1 `shared/serializer`（用于 IPC 编码 push payload + 元通道数据）
+- 同向依赖：M1 `shared/serializer`（用于 IPC 编码 push payload + 元通道数据）及 `shared/envelope`（架构 §7.1）、`shared/naming`（架构 §7.4）。
 
 ## 二、用户接触面
 
@@ -32,8 +49,8 @@ Notice.init({ userSchemas: [fooNotice /* , ... */] });
 **约定**：
 
 - schema 只声明事件名（数组形态），不附带任何 per-event 元数据
-- 事件名只能由字母、数字、下划线、连字符构成（不含点号），避免与事件全名分隔符冲突
-- 同一 namespace 在所有挂载的 schema 中**全局唯一**，冲突时 `init` 抛错
+- 事件名与 namespace 均须为合法 JS 标识符 `/^[A-Za-z_][A-Za-z0-9_]*$/`（详见架构 §3.7 / §7.4），由 `validateNoticeSchema` 承担运行时校验（详见架构 §7.5）。事件名不含点号，避免与 fullEventName 分隔符冲突。
+- 同一 namespace 在所有挂载的 Notice schema 中全局唯一，冲突时 `init` 抛错
 
 ### 2.2 主端：推送事件
 
@@ -50,7 +67,7 @@ Notice.direct('foo.dataReady', windowId, { rows: 100 });
 - 事件全名形态为 `${namespace}.${event}`（点号分隔）
 - 事件未在 schema 中声明 → 抛错
 - `direct` 的目标 windowId 对应窗口不存在（已关闭）→ **静默忽略**，不抛错（窗口生命周期变化是正常情况）
-- payload 经 `serialize` 编码后通过 IPC 发送，业务侧无需关心可克隆性
+- payload 经 `serializeForIpc` 编码后通过 IPC 发送，业务侧无需关心可克隆性
 
 ### 2.3 Preload：经聚合入口暴露
 
@@ -110,7 +127,7 @@ Notice.cleanup();
 主端：
 
 ```js
-webContents.send('notice:event', fullEventName, serialize(data, { strict: false }));
+webContents.send('notice:event', fullEventName, serializeForIpc(data));
 ```
 
 preload 接收：
@@ -125,12 +142,7 @@ ipcRenderer.on('notice:event', (_event, fullEventName, data) => {
 
 ### 3.3 元通道 `notice:getSchema`
 
-使用与 M2 一致的信封：
-
-```js
-{ ok: true,  data: [...] }
-{ ok: false, error: <serialize(err)> }
-```
+元通道 `notice:getSchema` 使用统一信封 `{ ok, data?, error? }`（详见架构 §7.1）。信封 `data` 与 `error` 字段均经 `serializeForIpc()` 编码（详见架构 §7.2）。
 
 `data` 形状：
 
@@ -166,13 +178,15 @@ Notice.init({ userSchemas: [schema1, schema2, ...] })
 
 对单个 schema：
 
-1. **校验 namespace**：与已注册命名空间冲突 → 抛 `Notice namespace "${ns}" 冲突`。
-2. **校验 events 字段**：必须是字符串数组；每项必须只含 `[A-Za-z0-9_-]` 字符（不含点号，避免 fullEventName 分隔符冲突）。
-3. 记入内部 `registeredSchemas: Map<namespace, eventList>`。
+`registerSchema(schema)` 内部调用 `validateNoticeSchema(schema)`（M3 公开导出，详见架构 §7.5）完成 schema 形态与命名校验；校验通过后检查 namespace 冲突。校验失败抛错细节由 validateNoticeSchema 定义。
+
+校验通过后记入内部 `registeredSchemas: Map<namespace, eventList>`。
 
 **注**：Notice **不为每个事件注册 IPC channel**——所有推送共用 `notice:event` 通道。`registerSchema` 只是登记"该 namespace 有这些事件名"，供 broadcast / direct 校验和元通道回报。
 
 ### 4.3 `broadcast`
+
+IPC payload 与元通道数据统一经 serializeForIpc()（详见架构 §7.2）。
 
 ```js
 function broadcast(fullEventName, data) {
@@ -181,7 +195,7 @@ function broadcast(fullEventName, data) {
     if (!events || !events.includes(eventName)) {
         throw new Error(`Notice 事件 "${fullEventName}" 未注册`);
     }
-    const safeData = serialize(data, { strict: false });
+    const safeData = serializeForIpc(data);
     for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
     }
@@ -199,7 +213,7 @@ function direct(fullEventName, windowId, data) {
     }
     const win = BrowserWindow.fromId(windowId);
     if (!win) return;   // 窗口已关闭：静默忽略
-    const safeData = serialize(data, { strict: false });
+    const safeData = serializeForIpc(data);
     win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
 }
 ```
@@ -213,9 +227,9 @@ ipcMain.on(META_GET_SCHEMA_CHANNEL, event => {
             namespace,
             events,
         }));
-        event.returnValue = okEnvelope(serialize(list, { strict: false }));
+        event.returnValue = okEnvelope(serializeForIpc(list));
     } catch (err) {
-        event.returnValue = errorEnvelope(serialize(err, { strict: false }));
+        event.returnValue = errorEnvelope(serializeForIpc(err));
     }
 });
 ```
@@ -244,6 +258,8 @@ module.exports = function buildAppNotice() { /* returns appNotice */ };
 由聚合入口 `src/preload.js` 引用，经 `contextBridge.exposeInMainWorld('appNotice', buildAppNotice())` 暴露给渲染端。`notice/preload.js` 自身**不**自动 init、**不**调用 `contextBridge`。
 
 ### 5.2 `buildAppNotice` 流程
+
+preload 端 envelope 解包契约详见架构 §7.1；错误还原 `reviveError` 详见架构 §7.3。
 
 ```js
 function buildAppNotice() {
@@ -309,7 +325,7 @@ function buildEventApi(fullEventName, listeners) {
 ### 5.4 数据流
 
 ```
-主端 broadcast / direct  ──→  webContents.send('notice:event', fullEventName, serialize(data))
+主端 broadcast / direct  ──→  webContents.send('notice:event', fullEventName, serializeForIpc(data))
                                             │
                                             ▼
 preload  ipcRenderer.on('notice:event', dispatcher)
@@ -318,7 +334,7 @@ preload  ipcRenderer.on('notice:event', dispatcher)
                               listeners.get(fullEventName).forEach(cb => cb(data))
 ```
 
-每个订阅回调被同步调用，`data` 已是 plain serialize 过的数据。
+每个订阅回调被同步调用，`data` 已是 plain serializeForIpc 过的数据。
 
 ### 5.5 contextBridge 边界
 
@@ -342,8 +358,10 @@ preload  ipcRenderer.on('notice:event', dispatcher)
 
 | 方向 | 依赖 | 说明 |
 |---|---|---|
-| M3 主端 → M1 | `serialize` | 编码 push payload / 元通道数据 / 错误 |
+| M3 主端 → M1 | `serialize` / `serializeForIpc` | 编码 push payload / 元通道数据 / 错误 |
 | M3 preload → M1 | `reviveError` | 反序列化元通道错误 |
+| M3 主/preload → shared/envelope | `okEnvelope` / `errorEnvelope`（详见架构 §7.1） | 统一信封 |
+| M3 主/preload → shared/naming | `isValidIdentifier`（详见架构 §7.4） | 命名校验 |
 | M3 主端 → electron | `BrowserWindow.getAllWindows/fromId`、`webContents.send`、`ipcMain.on/removeAllListeners` | 推送 + 元通道 |
 | M3 preload → electron | `ipcRenderer.on/sendSync` | 接收推送 + 取 schema |
 
@@ -366,7 +384,7 @@ preload  ipcRenderer.on('notice:event', dispatcher)
 src/notice/
 ├── main.js              # 主端入口
 ├── preload.js           # preload 入口
-└── protocol.js          # 协议契约：channel 命名 + 信封 + 元通道形状
+└── protocol.js          # 协议契约：channel 命名 + 元通道形状（envelope 已上收 shared/envelope，详见架构 §7.7）
 ```
 
 ### 7.1 各文件职责
@@ -388,21 +406,16 @@ src/notice/
 
 **`protocol.js`**
 
-通道命名与信封的**单一真理源**。`main.js` 与 `preload.js` 都从这里取，避免常量在两处各写一份漂移。
+通道命名的**单一真理源**（envelope 已上收 `shared/envelope`，详见架构 §7.7）。`main.js` 与 `preload.js` 都从这里取，避免常量在两处各写一份漂移。
 
 ```js
 // 草拟内容
 const EVENT_CHANNEL = 'notice:event';
 const META_GET_SCHEMA_CHANNEL = 'notice:getSchema';
 
-const okEnvelope    = data  => ({ ok: true,  data });
-const errorEnvelope = error => ({ ok: false, error });
-
 module.exports = {
     EVENT_CHANNEL,
     META_GET_SCHEMA_CHANNEL,
-    okEnvelope,
-    errorEnvelope,
 };
 ```
 
