@@ -2,11 +2,27 @@
 
 > 所属：[Toolkit 总设计](./2026-06-03-toolkit-overview-design.md) 的 M5 模块。
 
+## 落地文件
+
+- 参考示例入口：`src/capability/example/index.js`
+
+## 依赖与被依赖
+
+**依赖：** 无（capability 模块契约上不得依赖 M2 Service / M3 Notice 或其他 capability，详见架构 §3.6）
+
+**被依赖：** 无（capability 模块之间互不依赖）
+
+**文档级引用：**
+- 引用 M2 spec 的 `serviceSchema` 形态与 `validateServiceSchema`（详见架构 §7.5）
+- 引用 M3 spec 的 `noticeSchema` 形态与 `validateNoticeSchema`（详见架构 §7.5）
+
 ## 一、定位
 
 M5 是 toolkit 的 **capability 命名空间标准接入约定**——定义主端能力模块的物理结构、导出形态、命名约定、副作用约束、挂载路径，并附一份最小可参照的参考示例（`capability/example/`）。后续具体能力（logger / store / system / os 等）按本约定接入 `capability/` 命名空间。
 
 M5 本身**不含 IPC 桥接逻辑**——它复用 M2 Service 与 M3 Notice 的 protocol：capability 模块的 `serviceSchema` 形态由 M2 protocol 定义，`noticeSchema` 形态由 M3 protocol 定义。capability 实现者无须了解 IPC 通道命名等内部细节，只需遵循 M2 / M3 暴露的 schema 形态。
+
+capability 实现者只需遵循 M2 / M3 的 schema 形态；schema 命名规则详见架构 §7.4；schema 运行时校验由 M2 / M3 的 `validateServiceSchema` / `validateNoticeSchema` 承担，详见架构 §7.5。
 
 ## 二、契约
 
@@ -57,10 +73,13 @@ module.exports = {
 
 ### 2.3 命名约定
 
-- 目录名（subpath name）= `serviceSchema.namespace` = `noticeSchema.namespace` 三者保持一致
+目录名（subpath name）= `serviceSchema.namespace` = `noticeSchema.namespace` 三者保持一致（详见架构 §3.7 / §7.4）。三者均须为合法 JS 标识符 `/^[A-Za-z_][A-Za-z0-9_]*$/`。
+
 - 入口文件遵循总设计的命名约定：单侧入口模块用 `index.js`（与 `shared/serializer/` 一致）
 
 ### 2.4 副作用约束（`require` 零副作用）
+
+capability 模块在被 `require()` 时不得产生任何副作用（详见架构 §3.1 `require` 零副作用）。
 
 capability 模块在被 `require()` 时**不得产生任何副作用**：
 
@@ -76,11 +95,7 @@ capability 模块在被 `require()` 时**不得产生任何副作用**：
 
 ### 2.5 与 M2 / M3 protocol 的关系
 
-`serviceSchema` 字段形态、可选 opt-in 列表（`sync` / `needsEvent`）、handler 调用语义——全部由 [M2 Service 详细设计](./2026-06-03-toolkit-m2-service-design.md) 定义，M5 不重复。
-
-`noticeSchema` 字段形态、事件命名规则——全部由 [M3 Notice 详细设计](./2026-06-03-toolkit-m3-notice-design.md) 定义，M5 不重复。
-
-capability 实现者写 schema 时**直接对照 M2 / M3 spec**。
+`serviceSchema` 字段形态、可选 opt-in 列表（`sync` / `needsEvent`）、handler 调用语义、运行时校验函数 `validateServiceSchema` —— 由 M2 Service spec 定义（详见架构 §7.5 引用规则）。`noticeSchema` 字段形态、事件命名规则、运行时校验函数 `validateNoticeSchema` —— 由 M3 Notice spec 定义。capability 实现者写 schema 时直接对照 M2 / M3 spec 与架构 §7.4 命名规则。
 
 ## 三、用户接触面
 
@@ -180,6 +195,8 @@ module.exports = {
 - **零副作用** —— `require` 该模块只产生上述对象，不触发任何 IPC 注册 / IO。
 - **零依赖 Service / Notice** —— 文件顶部无 `require('@base-client/toolkit/service')` 等。
 
+capability 的 schema shape 测试若需运行时校验，直接 delegate 到 M2 `validateServiceSchema` / M3 `validateNoticeSchema`（详见架构 §7.5），避免命名 regex 散在多处漂移。
+
 ### 4.2 接入示例（主端）
 
 ```js
@@ -223,6 +240,8 @@ const off = window.appNotice.example.tick.on(data => {
 | 用户消费者 → M2 / M3 | `Service.init({ userSchemas: [cap.serviceSchema] })` 等 | 挂载到桥接机制 |
 
 ### 5.2 capability 模块的依赖约束
+
+依赖方向严格按架构 §3.6 模块间独立：capability 模块不得依赖 M2 Service / M3 Notice 或其他 capability。
 
 capability 模块自身**可以依赖**：
 
