@@ -2,6 +2,18 @@
 
 > 所属：[Toolkit 总设计](./2026-06-03-toolkit-overview-design.md) 的 M4 模块。
 
+## 落地文件
+
+- 单类文件：`src/enhance/BaseWindow.js`（文件名即类名，无 `index.js`，无子目录）
+
+## 依赖与被依赖
+
+**依赖：**
+- electron —— `BrowserWindow`
+- lodash.merge —— 深合并 options
+
+**被依赖：** 无（其他模块与 M4 完全解耦）
+
 ## 一、定位
 
 M4 BaseWindow 是 toolkit 的 **`BrowserWindow` 抽象基类**——通过模板方法模式 + 生命周期 hooks，让用户用 subclass 形式声明窗口类型、组织窗口生命周期逻辑。
@@ -10,6 +22,9 @@ M4 是**纯主端工具**：
 
 - 仅在主进程使用，无 preload / 渲染端代码
 - 不涉及 IPC，无依赖 M1 / M2 / M3
+
+> M4 与 IPC 桥接机制及序列化基础层完全解耦，详见架构 §3.6 模块间独立。
+
 - 不管理多窗口集合
 - 不向窗口注入 preload（用户在 `getWindowOptions().webPreferences.preload` 自填）
 - 仅依赖 Electron `BrowserWindow` + `lodash.merge`（深合并默认 options）
@@ -158,7 +173,7 @@ create() {
 | `isDestroyed()` | `boolean` | `browserWindow?.isDestroyed() ?? true`；null 视为已销毁 |
 | `send(channel, data)` | `void` | `browserWindow?.webContents.send(channel, data)`；null 安全 |
 
-**关于 `send`**：仅作为 escape hatch（debug / 一次性私下沟通）。日常主→渲染推送请使用 **M3 Notice**——Notice 有 schema 协议、自动序列化、订阅模型，是为推送场景设计的正路；`send` 绕过这些。
+**关于 `send`**：仅作为 escape hatch（debug / 一次性私下沟通）。日常主→渲染推送请使用 **M3 Notice**——Notice 有 schema 协议、自动序列化、订阅模型，是为推送场景设计的正路；`send` 绕过这些。日常主→渲染推送请使用 Notice —— Notice 有 schema 协议、自动 `serializeForIpc()` 编码、订阅模型，是为推送场景设计的正路（详见架构 §4 核心能力）。
 
 ## 五、默认窗口选项
 
