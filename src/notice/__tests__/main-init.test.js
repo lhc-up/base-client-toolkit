@@ -72,10 +72,36 @@ describe('init: schema validation', () => {
             userSchemas: [{ namespace: 'foo', events: ['has space'] }],
         })).toThrow(/invalid event name/i);
     });
-    it('valid event names pass: letters/digits/underscore/dash', () => {
+    it('valid event names pass: letters/digits/underscore (no dash)', () => {
         expect(() => Notice.init({
-            userSchemas: [{ namespace: 'foo', events: ['ab_c-1', 'X', 'event2'] }],
+            userSchemas: [{ namespace: 'foo', events: ['abc', 'X', 'event_2', '_underscore'] }],
         })).not.toThrow();
+    });
+    it('event name with dash rejected (must be valid JS identifier)', () => {
+        expect(() => Notice.init({
+            userSchemas: [{ namespace: 'foo', events: ['ab-c'] }],
+        })).toThrow(/invalid event name/i);
+    });
+    it('event name starting with digit rejected', () => {
+        expect(() => Notice.init({
+            userSchemas: [{ namespace: 'foo', events: ['1abc'] }],
+        })).toThrow(/invalid event name/i);
+    });
+    it('namespace with dash rejected', () => {
+        expect(() => Notice.init({
+            userSchemas: [{ namespace: 'foo-bar', events: ['x'] }],
+        })).toThrow(/namespace.*invalid/i);
+    });
+    it('namespace starting with digit rejected', () => {
+        expect(() => Notice.init({
+            userSchemas: [{ namespace: '1foo', events: ['x'] }],
+        })).toThrow(/namespace.*invalid/i);
+    });
+    it('validateNoticeSchema is exported and callable', () => {
+        const { validateNoticeSchema } = require('../main');
+        expect(typeof validateNoticeSchema).toBe('function');
+        expect(() => validateNoticeSchema({ namespace: 'foo', events: ['a'] })).not.toThrow();
+        expect(() => validateNoticeSchema({ namespace: 'foo-bad', events: ['a'] })).toThrow();
     });
     it('duplicate namespace across schemas throws', () => {
         expect(() => Notice.init({

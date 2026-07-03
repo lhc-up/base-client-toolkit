@@ -21,9 +21,8 @@ require.cache[electronPath] = {
 };
 
 const { ipcRenderer } = electronMock;
-const {
-    okEnvelope, errorEnvelope, META_GET_SCHEMA_CHANNEL,
-} = require('../protocol');
+const { META_GET_SCHEMA_CHANNEL } = require('../protocol');
+const { okEnvelope, errorEnvelope } = require('../../shared/envelope');
 
 const preloadPath = require.resolve('../preload');
 

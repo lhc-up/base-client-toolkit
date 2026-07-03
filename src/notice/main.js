@@ -1,42 +1,62 @@
 const { ipcMain, BrowserWindow } = require('electron');
-// IPC 路径必须永不抛错：strict=false 覆盖 dev 默认的 strict=true。
-const { serialize } = require('../shared/serializer');
+const { serializeForIpc } = require('../shared/serializer');
+const { okEnvelope, errorEnvelope } = require('../shared/envelope');
+const { isValidIdentifier } = require('../shared/naming');
 const {
     EVENT_CHANNEL,
     META_GET_SCHEMA_CHANNEL,
-    okEnvelope,
-    errorEnvelope,
 } = require('./protocol');
-
-const EVENT_NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 const registeredSchemas = new Map();
 
-function registerSchema(schema) {
-    if (!schema || typeof schema !== 'object') {
+/**
+ * 校验 Notice schema 的形态与命名合规（详见架构 §7.5）。
+ * 抛错则 schema 不合规；无返回值。
+ *
+ * @param {Object} schema
+ * @param {string} schema.namespace 合法 JS 标识符
+ * @param {string[]} schema.events 事件名数组，每项须为合法 JS 标识符
+ * @throws {Error} 任何不合规抛错
+ */
+function validateNoticeSchema(schema) {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
         throw new Error('Notice schema must be an object');
     }
     const { namespace, events } = schema;
-    if (typeof namespace !== 'string' || !namespace) {
-        throw new Error('Notice schema requires string namespace');
+    if (!isValidIdentifier(namespace)) {
+        throw new Error(
+            `Notice schema namespace "${namespace}" invalid ` +
+            `(must match /^[A-Za-z_][A-Za-z0-9_]*$/)`,
+        );
     }
     if (!Array.isArray(events)) {
         throw new Error(`Notice schema "${namespace}" requires events array`);
     }
     for (const ev of events) {
-        if (typeof ev !== 'string' || !EVENT_NAME_RE.test(ev)) {
+        if (!isValidIdentifier(ev)) {
             throw new Error(
                 `Notice schema "${namespace}": invalid event name "${ev}" ` +
-                `(allowed: [A-Za-z0-9_-]+)`,
+                `(must match /^[A-Za-z_][A-Za-z0-9_]*$/)`,
             );
         }
     }
+}
+
+function registerSchema(schema) {
+    validateNoticeSchema(schema);
+    const { namespace, events } = schema;
     if (registeredSchemas.has(namespace)) {
         throw new Error(`Notice namespace "${namespace}" conflict`);
     }
     registeredSchemas.set(namespace, [...events]);
 }
 
+/**
+ * 初始化 Notice，注册 schema 列表并挂载元通道 listener。
+ *
+ * @param {{ userSchemas: Object[] }} opts
+ * @throws {Error} opts 缺失、userSchemas 非数组、schema 校验不通过或 namespace 冲突时抛错
+ */
 function init(opts) {
     if (!opts || !Array.isArray(opts.userSchemas)) {
         throw new Error('Notice.init requires { userSchemas: Array }');
@@ -53,9 +73,9 @@ function handleGetSchema(event) {
             namespace,
             events,
         }));
-        event.returnValue = okEnvelope(serialize(list, { strict: false }));
+        event.returnValue = okEnvelope(serializeForIpc(list));
     } catch (err) {
-        event.returnValue = errorEnvelope(serialize(err, { strict: false }));
+        event.returnValue = errorEnvelope(serializeForIpc(err));
     }
 }
 
@@ -81,25 +101,44 @@ function assertRegistered(fullEventName) {
     }
 }
 
+/**
+ * 推送事件到所有窗口。
+ *
+ * @param {string} fullEventName 形如 "namespace.event"
+ * @param {*} data 推送 payload；经 serializeForIpc 编码后发送
+ * @throws {Error} 事件未注册抛错
+ */
 function broadcast(fullEventName, data) {
     assertRegistered(fullEventName);
-    const safeData = serialize(data, { strict: false });
+    const safeData = serializeForIpc(data);
     for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
     }
 }
 
+/**
+ * 推送事件到指定窗口。窗口不存在则静默忽略。
+ *
+ * @param {string} fullEventName 形如 "namespace.event"
+ * @param {number} windowId BrowserWindow.id
+ * @param {*} data 推送 payload；经 serializeForIpc 编码后发送
+ * @throws {Error} 事件未注册抛错
+ */
 function direct(fullEventName, windowId, data) {
     assertRegistered(fullEventName);
     const win = BrowserWindow.fromId(windowId);
     if (!win) return;
-    const safeData = serialize(data, { strict: false });
+    const safeData = serializeForIpc(data);
     win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
 }
 
+/**
+ * 清理元通道 listener 和 namespace 注册表。
+ * 约定在 app 'will-quit' 中调用；正常运行不需要主动调用。
+ */
 function cleanup() {
     ipcMain.removeAllListeners(META_GET_SCHEMA_CHANNEL);
     registeredSchemas.clear();
 }
 
-module.exports = { init, broadcast, direct, cleanup };
+module.exports = { init, broadcast, direct, cleanup, validateNoticeSchema };
