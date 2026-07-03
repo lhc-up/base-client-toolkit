@@ -105,6 +105,39 @@ describe('init: schema validation', () => {
             }],
         })).not.toThrow();
     });
+
+    it('namespace with dash rejected (must be valid JS identifier)', () => {
+        expect(() => Service.init({
+            userSchemas: [{ namespace: 'foo-bar', handlers: { a() {} } }],
+        })).toThrow(/namespace.*invalid/i);
+    });
+    it('namespace starting with digit rejected', () => {
+        expect(() => Service.init({
+            userSchemas: [{ namespace: '1foo', handlers: { a() {} } }],
+        })).toThrow(/namespace.*invalid/i);
+    });
+    it('handler name with dash rejected', () => {
+        expect(() => Service.init({
+            userSchemas: [{ namespace: 'foo', handlers: { 'bad-name'() {} } }],
+        })).toThrow(/handler name.*invalid/i);
+    });
+    it('handler name starting with digit rejected', () => {
+        expect(() => Service.init({
+            userSchemas: [{ namespace: 'foo', handlers: { '1bad'() {} } }],
+        })).toThrow(/handler name.*invalid/i);
+    });
+    it('handler value must be a function', () => {
+        expect(() => Service.init({
+            userSchemas: [{ namespace: 'foo', handlers: { notFn: 'string' } }],
+        })).toThrow(/must be function/i);
+    });
+
+    it('validateServiceSchema is exported and callable', () => {
+        const { validateServiceSchema } = require('../main');
+        expect(typeof validateServiceSchema).toBe('function');
+        expect(() => validateServiceSchema({ namespace: 'foo', handlers: { a() {} } })).not.toThrow();
+        expect(() => validateServiceSchema({ namespace: 'foo-bad', handlers: { a() {} } })).toThrow();
+    });
 });
 
 describe('init: channel registration', () => {
