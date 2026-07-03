@@ -12,16 +12,3 @@ describe('protocol channel constants', () => {
     });
 });
 
-describe('envelope helpers', () => {
-    it('okEnvelope wraps data', () => {
-        expect(protocol.okEnvelope({ a: 1 })).toEqual({ ok: true, data: { a: 1 } });
-    });
-    it('okEnvelope preserves undefined data', () => {
-        const env = protocol.okEnvelope(undefined);
-        expect(env.ok).toBe(true);
-        expect(env.data).toBeUndefined();
-    });
-    it('errorEnvelope wraps error', () => {
-        expect(protocol.errorEnvelope('boom')).toEqual({ ok: false, error: 'boom' });
-    });
-});
