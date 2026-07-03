@@ -1,38 +1,36 @@
 {
     "name": "@base-client/toolkit",
     "version": "0.0.1",
-    "main": "dist/index.js",
+    "main": "src/index.js",
     "exports": {
-        ".": "./dist/index.js",
-        "./preload": "./dist/preload.js",
-        "./service": "./dist/service/main.js",
-        "./service/preload": "./dist/service/preload.js",
-        "./notice": "./dist/notice/main.js",
-        "./notice/preload": "./dist/notice/preload.js",
-        "./capability/*": "./dist/capability/*/index.js",
-        "./enhance/*": "./dist/enhance/*.js"
+        ".": "./src/index.js",
+        "./preload": "./src/preload.js",
+        "./service": "./src/service/main.js",
+        "./service/preload": "./src/service/preload.js",
+        "./notice": "./src/notice/main.js",
+        "./notice/preload": "./src/notice/preload.js",
+        "./capability/*": "./src/capability/*/index.js",
+        "./enhance/*": "./src/enhance/*.js"
     },
     "scripts": {
-        "build": "node scripts/build.mjs",
         "test": "vitest run",
         "test:watch": "vitest",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm test"
     },
     "keywords": [],
     "author": "",
     "license": "ISC",
     "description": "",
     "peerDependencies": {
-        "electron": "22.3.1"
+        "electron": ">=15.0.0"
     },
     "devDependencies": {
-        "fs-extra": "^11.3.5",
         "vitest": "^2.1.9"
     },
     "dependencies": {
         "lodash.merge": "^4.6.2"
     },
     "files": [
-        "dist"
+        "src"
     ]
 }

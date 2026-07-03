@@ -27,14 +27,14 @@ describe('capability/example: subpath export wiring', () => {
         expect(example.noticeSchema.namespace).toBe(dirName);
     });
 
-    it('package.json declares ./capability/* wildcard export pointing into dist', () => {
+    it('package.json declares ./capability/* wildcard export pointing into src', () => {
         const pkgPath = path.resolve(__dirname, '../../../package.json');
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
         expect(pkg.exports).toBeTruthy();
         const cap = pkg.exports['./capability/*'];
         expect(cap).toBeTruthy();
         const target = typeof cap === 'string' ? cap : cap.default;
-        expect(target).toMatch(/\.\/dist\/capability\/\*\/index\.js$/);
+        expect(target).toMatch(/\.\/src\/capability\/\*\/index\.js$/);
     });
 
     it('relative require and absolute require yield the same module object', () => {
