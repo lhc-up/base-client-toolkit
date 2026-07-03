@@ -46,7 +46,11 @@ describe('limits.resolveOpts', () => {
             process.env.NODE_ENV = 'production';
             expect(resolveOpts({}).strict).toBe(false);
         } finally {
-            process.env.NODE_ENV = original;
+            if (original === undefined) {
+                delete process.env.NODE_ENV;
+            } else {
+                process.env.NODE_ENV = original;
+            }
         }
     });
 });
