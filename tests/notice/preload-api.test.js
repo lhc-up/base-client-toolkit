@@ -27,7 +27,6 @@ const { okEnvelope, errorEnvelope } = require('../../src/shared/envelope');
 const preloadPath = require.resolve('../../src/notice/preload');
 
 beforeEach(() => {
-    // Drop cached preload module so each test re-runs factory module load
     delete require.cache[preloadPath];
     ipcRenderer.on.mockClear();
     ipcRenderer.sendSync.mockReset();
@@ -39,21 +38,25 @@ function loadBuilder() {
     return require('../../src/notice/preload');
 }
 
+function build(schemaList) {
+    ipcRenderer.sendSync.mockReturnValue(okEnvelope(schemaList));
+    return loadBuilder()();
+}
+
 describe('buildAppNotice: factory output shape', () => {
-    it('returns object keyed by namespace, each with event names', () => {
-        ipcRenderer.sendSync.mockReturnValue(okEnvelope([
+    it('returns object keyed by namespace, each with on/once/off methods', () => {
+        const api = build([
             { namespace: 'foo', events: ['userLoggedIn', 'dataReady'] },
             { namespace: 'bar', events: ['ping'] },
-        ]));
-
-        const buildAppNotice = loadBuilder();
-        const api = buildAppNotice();
-
+        ]);
         expect(typeof api.foo).toBe('object');
-        expect(typeof api.foo.userLoggedIn.on).toBe('function');
-        expect(typeof api.foo.userLoggedIn.once).toBe('function');
-        expect(typeof api.foo.userLoggedIn.off).toBe('function');
-        expect(typeof api.bar.ping.on).toBe('function');
+        expect(typeof api.foo.on).toBe('function');
+        expect(typeof api.foo.once).toBe('function');
+        expect(typeof api.foo.off).toBe('function');
+        expect(typeof api.bar.on).toBe('function');
+        // Per-event sub-objects must not exist
+        expect(api.foo.userLoggedIn).toBeUndefined();
+        expect(api.bar.ping).toBeUndefined();
     });
 
     it('calls sendSync on META_GET_SCHEMA_CHANNEL', () => {
@@ -67,125 +70,196 @@ describe('buildAppNotice: factory output shape', () => {
             name: 'TypeError',
             message: 'meta failed',
         }));
-        const buildAppNotice = loadBuilder();
-        expect(() => buildAppNotice()).toThrow(/meta failed/);
+        expect(() => loadBuilder()()).toThrow(/meta failed/);
     });
 
     it('empty schema list yields empty api object', () => {
         ipcRenderer.sendSync.mockReturnValue(okEnvelope([]));
-        const api = loadBuilder()();
-        expect(api).toEqual({});
+        expect(loadBuilder()()).toEqual({});
     });
 });
 
-describe('buildEventApi: on returns unsubscribe', () => {
-    function build() {
-        ipcRenderer.sendSync.mockReturnValue(okEnvelope([
-            { namespace: 'foo', events: ['evA'] },
-        ]));
-        return loadBuilder()();
-    }
-
+describe('on: subscribe and unsubscribe', () => {
     it('on returns a function that removes the subscription', () => {
-        const api = build();
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
         const cb = vi.fn();
-        const off = api.foo.evA.on(cb);
+        const off = api.foo.on('evA', cb);
 
-        // Simulate push
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { x: 1 });
+        dispatcher({}, 'foo.evA', [{ x: 1 }]);
         expect(cb).toHaveBeenCalledWith({ x: 1 });
 
         off();
-        dispatcher({}, 'foo.evA', { x: 2 });
+        dispatcher({}, 'foo.evA', [{ x: 2 }]);
         expect(cb).toHaveBeenCalledTimes(1);
     });
 
     it('multiple on subscriptions all fire', () => {
-        const api = build();
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
         const a = vi.fn();
         const b = vi.fn();
-        api.foo.evA.on(a);
-        api.foo.evA.on(b);
+        api.foo.on('evA', a);
+        api.foo.on('evA', b);
 
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { v: 1 });
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
         expect(a).toHaveBeenCalledWith({ v: 1 });
         expect(b).toHaveBeenCalledWith({ v: 1 });
     });
 });
 
-describe('buildEventApi: once auto-unsubscribes', () => {
-    function build() {
-        ipcRenderer.sendSync.mockReturnValue(okEnvelope([
-            { namespace: 'foo', events: ['evA'] },
-        ]));
-        return loadBuilder()();
-    }
-
+describe('once: auto-unsubscribes', () => {
     it('once fires exactly one time', () => {
-        const api = build();
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
         const cb = vi.fn();
-        api.foo.evA.once(cb);
+        api.foo.once('evA', cb);
 
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { n: 1 });
-        dispatcher({}, 'foo.evA', { n: 2 });
+        dispatcher({}, 'foo.evA', [{ n: 1 }]);
+        dispatcher({}, 'foo.evA', [{ n: 2 }]);
 
         expect(cb).toHaveBeenCalledTimes(1);
         expect(cb).toHaveBeenCalledWith({ n: 1 });
     });
 
     it('once returns unsubscribe that prevents firing if called before push', () => {
-        const api = build();
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
         const cb = vi.fn();
-        const off = api.foo.evA.once(cb);
+        const off = api.foo.once('evA', cb);
         off();
 
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { n: 1 });
+        dispatcher({}, 'foo.evA', [{ n: 1 }]);
         expect(cb).not.toHaveBeenCalled();
     });
 });
 
-describe('buildEventApi: off semantics', () => {
-    function build() {
-        ipcRenderer.sendSync.mockReturnValue(okEnvelope([
-            { namespace: 'foo', events: ['evA'] },
-        ]));
-        return loadBuilder()();
-    }
-
-    it('off(cb) removes only that callback', () => {
-        const api = build();
+describe('off: three-mode semantics', () => {
+    it('off(eventName, cb) removes only that callback', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
         const a = vi.fn();
         const b = vi.fn();
-        api.foo.evA.on(a);
-        api.foo.evA.on(b);
-        api.foo.evA.off(a);
+        api.foo.on('evA', a);
+        api.foo.on('evA', b);
+        api.foo.off('evA', a);
 
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { v: 1 });
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
         expect(a).not.toHaveBeenCalled();
         expect(b).toHaveBeenCalledWith({ v: 1 });
     });
 
-    it('off() with no arg clears all subscriptions for that event', () => {
-        const api = build();
+    it('off(eventName) clears all subscriptions for that event', () => {
+        const api = build([{ namespace: 'foo', events: ['evA', 'evB'] }]);
         const a = vi.fn();
         const b = vi.fn();
-        api.foo.evA.on(a);
-        api.foo.evA.on(b);
-        api.foo.evA.off();
+        const c = vi.fn();
+        api.foo.on('evA', a);
+        api.foo.on('evA', b);
+        api.foo.on('evB', c);
+        api.foo.off('evA');
 
         const dispatcher = ipcRenderer.__handlers.get('notice:event');
-        dispatcher({}, 'foo.evA', { v: 1 });
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        dispatcher({}, 'foo.evB', [{ v: 2 }]);
+        expect(a).not.toHaveBeenCalled();
+        expect(b).not.toHaveBeenCalled();
+        expect(c).toHaveBeenCalledWith({ v: 2 });
+    });
+
+    it('off() with no args clears the entire namespace', () => {
+        const api = build([{ namespace: 'foo', events: ['evA', 'evB'] }]);
+        const a = vi.fn();
+        const b = vi.fn();
+        api.foo.on('evA', a);
+        api.foo.on('evB', b);
+        api.foo.off();
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        dispatcher({}, 'foo.evB', [{ v: 2 }]);
         expect(a).not.toHaveBeenCalled();
         expect(b).not.toHaveBeenCalled();
     });
 
-    it('off(cb) on unknown callback is a no-op (no throw)', () => {
-        const api = build();
-        expect(() => api.foo.evA.off(() => {})).not.toThrow();
+    it('off(eventName, unknownCb) is a no-op (no throw)', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.off('evA', () => {})).not.toThrow();
+    });
+
+    it('off() does not affect other namespaces', () => {
+        const api = build([
+            { namespace: 'foo', events: ['evA'] },
+            { namespace: 'bar', events: ['evB'] },
+        ]);
+        const a = vi.fn();
+        const b = vi.fn();
+        api.foo.on('evA', a);
+        api.bar.on('evB', b);
+        api.foo.off();
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        dispatcher({}, 'bar.evB', [{ v: 2 }]);
+        expect(a).not.toHaveBeenCalled();
+        expect(b).toHaveBeenCalledWith({ v: 2 });
+    });
+});
+
+describe('strict event-name validation', () => {
+    it('on throws when event is not declared in schema', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.on('undeclared', () => {}))
+            .toThrow(/Notice event "foo\.undeclared" not registered/);
+    });
+
+    it('once throws when event is not declared in schema', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.once('undeclared', () => {}))
+            .toThrow(/Notice event "foo\.undeclared" not registered/);
+    });
+
+    it('off(eventName, ...) throws when event is not declared', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.off('undeclared'))
+            .toThrow(/Notice event "foo\.undeclared" not registered/);
+        expect(() => api.foo.off('undeclared', () => {}))
+            .toThrow(/Notice event "foo\.undeclared" not registered/);
+    });
+
+    it('off() with no args does NOT throw even if namespace has no subscriptions', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.off()).not.toThrow();
+    });
+});
+
+describe('strict callback-type validation', () => {
+    it('on throws when cb is not a function', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.on('evA', 'not-a-fn'))
+            .toThrow(/Notice foo\.on callback must be a function/);
+        expect(() => api.foo.on('evA', null))
+            .toThrow(/Notice foo\.on callback must be a function/);
+        expect(() => api.foo.on('evA', undefined))
+            .toThrow(/Notice foo\.on callback must be a function/);
+    });
+
+    it('once throws when cb is not a function', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.once('evA', 42))
+            .toThrow(/Notice foo\.once callback must be a function/);
+    });
+
+    it('off(eventName, cb) throws when cb is provided but not a function', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.foo.off('evA', 'not-a-fn'))
+            .toThrow(/Notice foo\.off callback must be a function/);
+    });
+
+    it('assertEvent runs before assertFn (event-name error takes precedence)', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        // Undeclared event + non-function cb → event-name error wins
+        expect(() => api.foo.on('undeclared', 'not-a-fn'))
+            .toThrow(/not registered/);
     });
 });

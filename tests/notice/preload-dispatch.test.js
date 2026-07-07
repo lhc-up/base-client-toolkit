@@ -59,13 +59,13 @@ describe('single dispatcher', () => {
         const fooA = vi.fn();
         const fooB = vi.fn();
         const barC = vi.fn();
-        api.foo.a.on(fooA);
-        api.foo.b.on(fooB);
-        api.bar.c.on(barC);
+        api.foo.on('a', fooA);
+        api.foo.on('b', fooB);
+        api.bar.on('c', barC);
 
         const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
-        dispatcher({}, 'foo.a', { from: 'A' });
-        dispatcher({}, 'bar.c', { from: 'C' });
+        dispatcher({}, 'foo.a', [{ from: 'A' }]);
+        dispatcher({}, 'bar.c', [{ from: 'C' }]);
 
         expect(fooA).toHaveBeenCalledWith({ from: 'A' });
         expect(fooB).not.toHaveBeenCalled();
@@ -75,40 +75,66 @@ describe('single dispatcher', () => {
     it('push for unknown fullEventName is silently ignored', () => {
         build([{ namespace: 'foo', events: ['a'] }]);
         const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
-        expect(() => dispatcher({}, 'never.registered', {})).not.toThrow();
+        expect(() => dispatcher({}, 'never.registered', [])).not.toThrow();
     });
 
     it('push for known event with zero subscribers is a no-op', () => {
         build([{ namespace: 'foo', events: ['a'] }]);
         const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
-        expect(() => dispatcher({}, 'foo.a', { x: 1 })).not.toThrow();
+        expect(() => dispatcher({}, 'foo.a', [{ x: 1 }])).not.toThrow();
     });
 
-    it('callback throw does not break subsequent callbacks (current snapshot semantics)', () => {
-        const api = build([{ namespace: 'foo', events: ['a'] }]);
-        const good = vi.fn();
-        api.foo.a.on(() => { throw new Error('one cb failed'); });
-        api.foo.a.on(good);
-
+    it('malformed fullEventName (no dot) is silently ignored', () => {
+        build([{ namespace: 'foo', events: ['a'] }]);
         const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
-        // Spec does not require catching; if first throws, second won't run.
-        // We assert the dispatcher itself does not crash the test runner with unhandled.
-        let threw = false;
-        try { dispatcher({}, 'foo.a', { v: 1 }); } catch { threw = true; }
-        // Either it threw (and good was not called) or it didn't and good was.
-        // What matters: dispatcher must not corrupt internal state.
-        if (!threw) expect(good).toHaveBeenCalled();
+        expect(() => dispatcher({}, 'nodothere', [])).not.toThrow();
     });
 
-    it('data delivered as-is (already serialized by main)', () => {
+    it('spreads args array to callback (multi-arg push)', () => {
         const api = build([{ namespace: 'foo', events: ['a'] }]);
         const cb = vi.fn();
-        api.foo.a.on(cb);
+        api.foo.on('a', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
+        dispatcher({}, 'foo.a', [1, 'x', { k: 1 }]);
+
+        expect(cb).toHaveBeenCalledWith(1, 'x', { k: 1 });
+    });
+
+    it('zero-arg push invokes callback with no args', () => {
+        const api = build([{ namespace: 'foo', events: ['tick'] }]);
+        const cb = vi.fn();
+        api.foo.on('tick', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
+        dispatcher({}, 'foo.tick', []);
+
+        expect(cb).toHaveBeenCalledWith();
+        expect(cb).toHaveBeenCalledTimes(1);
+    });
+
+    it('single-arg push invokes callback with one arg (backward-compatible shape)', () => {
+        const api = build([{ namespace: 'foo', events: ['a'] }]);
+        const cb = vi.fn();
+        api.foo.on('a', cb);
 
         const payload = { iso: '2026-01-01T00:00:00.000Z', n: 7 };
         const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
-        dispatcher({}, 'foo.a', payload);
+        dispatcher({}, 'foo.a', [payload]);
 
         expect(cb).toHaveBeenCalledWith(payload);
+    });
+
+    it('snapshot iteration: once wrapper mutating the set does not break dispatch', () => {
+        const api = build([{ namespace: 'foo', events: ['a'] }]);
+        const onceCb = vi.fn();
+        const onCb = vi.fn();
+        api.foo.once('a', onceCb);
+        api.foo.on('a', onCb);
+
+        const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
+        dispatcher({}, 'foo.a', [{ v: 1 }]);
+        expect(onceCb).toHaveBeenCalledTimes(1);
+        expect(onCb).toHaveBeenCalledWith({ v: 1 });
     });
 });
