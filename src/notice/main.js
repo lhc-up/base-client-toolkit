@@ -105,14 +105,14 @@ function assertRegistered(fullEventName) {
  * 推送事件到所有窗口。
  *
  * @param {string} fullEventName 形如 "namespace.event"
- * @param {*} data 推送 payload；经 serializeForIpc 编码后发送
+ * @param {...*} args 推送 payload 参数（任意个，含零个）；整体经 serializeForIpc 编码为数组后发送
  * @throws {Error} 事件未注册抛错
  */
-function broadcast(fullEventName, data) {
+function broadcast(fullEventName, ...args) {
     assertRegistered(fullEventName);
-    const safeData = serializeForIpc(data);
+    const safeArgs = serializeForIpc(args);
     for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
+        win.webContents.send(EVENT_CHANNEL, fullEventName, safeArgs);
     }
 }
 

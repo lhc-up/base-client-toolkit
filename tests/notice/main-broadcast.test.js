@@ -61,7 +61,7 @@ describe('broadcast: delivery', () => {
         Notice.init({ userSchemas: [{ namespace: 'foo', events: ['evA'] }] });
     });
 
-    it('sends to every window from getAllWindows', () => {
+    it('sends args as array to every window from getAllWindows', () => {
         const w1 = makeWin();
         const w2 = makeWin();
         BrowserWindow.getAllWindows.mockReturnValue([w1, w2]);
@@ -71,12 +71,12 @@ describe('broadcast: delivery', () => {
         expect(w1.webContents.send).toHaveBeenCalledWith(
             EVENT_CHANNEL,
             'foo.evA',
-            { user: 123 },
+            [{ user: 123 }],
         );
         expect(w2.webContents.send).toHaveBeenCalledWith(
             EVENT_CHANNEL,
             'foo.evA',
-            { user: 123 },
+            [{ user: 123 }],
         );
     });
 
@@ -85,15 +85,17 @@ describe('broadcast: delivery', () => {
         expect(() => Notice.broadcast('foo.evA', { x: 1 })).not.toThrow();
     });
 
-    it('payload passes through serialize (function stripped to placeholder)', () => {
+    it('args pass through serialize (function stripped to placeholder)', () => {
         const w1 = makeWin();
         BrowserWindow.getAllWindows.mockReturnValue([w1]);
 
         Notice.broadcast('foo.evA', { cb: function named() {}, ok: true });
 
-        const sentPayload = w1.webContents.send.mock.calls[0][2];
-        expect(sentPayload.ok).toBe(true);
-        expect(sentPayload.cb).toBe('[Function: named]');
+        const sentArgs = w1.webContents.send.mock.calls[0][2];
+        expect(Array.isArray(sentArgs)).toBe(true);
+        expect(sentArgs.length).toBe(1);
+        expect(sentArgs[0].ok).toBe(true);
+        expect(sentArgs[0].cb).toBe('[Function: named]');
     });
 
     it('no per-window state: broadcast iterates getAllWindows() each call', () => {
@@ -105,8 +107,47 @@ describe('broadcast: delivery', () => {
         BrowserWindow.getAllWindows.mockReturnValueOnce([w2]);
         Notice.broadcast('foo.evA', { n: 2 });
 
-        expect(w1.webContents.send).toHaveBeenCalledTimes(1);
-        expect(w2.webContents.send).toHaveBeenCalledTimes(1);
+        expect(w1.webContents.send).toHaveBeenCalledWith(EVENT_CHANNEL, 'foo.evA', [{ n: 1 }]);
+        expect(w2.webContents.send).toHaveBeenCalledWith(EVENT_CHANNEL, 'foo.evA', [{ n: 2 }]);
         expect(BrowserWindow.getAllWindows).toHaveBeenCalledTimes(2);
+    });
+
+    it('accepts multiple args (rest params) and sends them as an array', () => {
+        const w1 = makeWin();
+        BrowserWindow.getAllWindows.mockReturnValue([w1]);
+
+        Notice.broadcast('foo.evA', 0.42, 'downloading', { eta: 12 });
+
+        expect(w1.webContents.send).toHaveBeenCalledWith(
+            EVENT_CHANNEL,
+            'foo.evA',
+            [0.42, 'downloading', { eta: 12 }],
+        );
+    });
+
+    it('accepts zero args (pure notification) and sends an empty array', () => {
+        const w1 = makeWin();
+        BrowserWindow.getAllWindows.mockReturnValue([w1]);
+
+        Notice.broadcast('foo.evA');
+
+        expect(w1.webContents.send).toHaveBeenCalledWith(
+            EVENT_CHANNEL,
+            'foo.evA',
+            [],
+        );
+    });
+
+    it('single-arg call still wraps in array of length 1', () => {
+        const w1 = makeWin();
+        BrowserWindow.getAllWindows.mockReturnValue([w1]);
+
+        Notice.broadcast('foo.evA', 'single');
+
+        expect(w1.webContents.send).toHaveBeenCalledWith(
+            EVENT_CHANNEL,
+            'foo.evA',
+            ['single'],
+        );
     });
 });
