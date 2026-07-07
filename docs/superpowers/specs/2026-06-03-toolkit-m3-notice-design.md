@@ -55,19 +55,23 @@ Notice.init({ userSchemas: [fooNotice /* , ... */] });
 ### 2.2 主端：推送事件
 
 ```js
-// 推给所有窗口
+// 推给所有窗口——支持任意个参数
 Notice.broadcast('foo.userLoggedIn', { userId: 123 });
+Notice.broadcast('foo.progress', 0.42, 'downloading', { eta: 12 });
+Notice.broadcast('foo.tick');   // 零参数合法：作为纯通知
 
 // 推给指定窗口（windowId 是 BrowserWindow.id）
 Notice.direct('foo.dataReady', windowId, { rows: 100 });
+Notice.direct('foo.chunk', windowId, seq, buffer);
 ```
 
 **约定**：
 
 - 事件全名形态为 `${namespace}.${event}`（点号分隔）
+- `broadcast(fullEvent, ...args)` / `direct(fullEvent, windowId, ...args)` 接受**任意个 payload 参数**（含零个）。渲染端订阅回调按同样顺序收到 `cb(...args)`
 - 事件未在 schema 中声明 → 抛错
 - `direct` 的目标 windowId 对应窗口不存在（已关闭）→ **静默忽略**，不抛错（窗口生命周期变化是正常情况）
-- payload 经 `serializeForIpc` 编码后通过 IPC 发送，业务侧无需关心可克隆性
+- 全部 `args` 整体经 `serializeForIpc` 编码为**一个数组**后通过 IPC 发送，业务侧无需关心可克隆性
 
 ### 2.3 Preload：经聚合入口暴露
 
@@ -80,27 +84,35 @@ require('@base-client/toolkit/preload').init();
 
 ### 2.4 渲染端：动态生成的 `appNotice` API
 
+`appNotice` 每个 namespace 直接提供 `on / once / off` 三个方法，事件名作为**第一个参数**传入（短名，不含 namespace 前缀）：
+
 ```js
 // 订阅，返回取消函数
-const off = window.appNotice.foo.userLoggedIn.on(data => {
+const off = window.appNotice.foo.on('userLoggedIn', data => {
     console.log('登录', data.userId);
 });
 
 off();   // 取消订阅
 
-// 只订阅一次
-window.appNotice.foo.dataReady.once(data => { /* ... */ });
+// 多参数：与主端 broadcast 传入的顺序一致
+window.appNotice.foo.on('progress', (ratio, phase, meta) => { /* ... */ });
 
-// 显式 off，不传 cb 时清空该事件全部订阅
-window.appNotice.foo.shutdown.off(callback);
-window.appNotice.foo.shutdown.off();
+// 只订阅一次
+window.appNotice.foo.once('dataReady', data => { /* ... */ });
+
+// off 三态
+window.appNotice.foo.off('shutdown', callback);   // 精确解绑
+window.appNotice.foo.off('shutdown');             // 清空该事件全部订阅
+window.appNotice.foo.off();                       // 清空该 namespace 全部订阅
 ```
 
 **约定**：
 
-- `appNotice[ns][event].on(cb)` 注册订阅，**返回取消函数**（调用即解绑）
-- `appNotice[ns][event].once(cb)` 注册一次性订阅，触发一次后自动解绑
-- `appNotice[ns][event].off(cb)` 显式解绑；不传 cb 时清空该事件全部订阅
+- `appNotice[ns].on(eventName, cb)` 注册订阅，**返回取消函数**（调用即解绑）
+- `appNotice[ns].once(eventName, cb)` 注册一次性订阅，触发一次后自动解绑；同样返回取消函数
+- `appNotice[ns].off(eventName, cb)` 精确解绑；`off(eventName)` 清空该事件全部订阅；`off()` 清空该 namespace 全部订阅
+- `eventName` 必须是该 namespace 在 schema 中声明过的事件名，否则 `on/once/off(eventName, ...)` 抛错（`off()` 无参例外，不校验）
+- `on/once` 的 `cb` 必须是函数，`off(eventName, cb)` 若显式传入 `cb` 也须是函数，否则抛错
 - 订阅状态只存在于当前 renderer 进程内存，**窗口关闭时随进程退出自动释放**
 
 ### 2.5 关停
@@ -127,18 +139,19 @@ Notice.cleanup();
 主端：
 
 ```js
-webContents.send('notice:event', fullEventName, serializeForIpc(data));
+webContents.send('notice:event', fullEventName, serializeForIpc(args));
+// args 是主端 broadcast/direct 收集的 rest 参数数组（可能为空数组）
 ```
 
 preload 接收：
 
 ```js
-ipcRenderer.on('notice:event', (_event, fullEventName, data) => {
-    // data 已是 serialize 过的 plain 数据；按 fullEventName 派发到订阅者
+ipcRenderer.on('notice:event', (_event, fullEventName, args) => {
+    // args 是已 serialize 过的 plain 数组；按 fullEventName 派发到订阅者，回调收到 cb(...args)
 });
 ```
 
-无 envelope 包裹——推送是单向流，无返回值、无错误回路（主端 push 抛错属主端业务，不走 IPC）。
+无 envelope 包裹——推送是单向流，无返回值、无错误回路（主端 push 抛错属主端业务，不走 IPC）。IPC 参数数固定为三段（channel / fullEventName / argsArray），无论业务传 0 个还是 N 个 payload，protocol 形状不变。
 
 ### 3.3 元通道 `notice:getSchema`
 
@@ -156,7 +169,7 @@ ipcRenderer.on('notice:event', (_event, fullEventName, data) => {
 ]
 ```
 
-preload 端据此构建 `appNotice[ns][eventName]`，每个事件挂上 on/once/off 方法。
+preload 端据此为每个 `namespace` 构建 `appNotice[namespace]` 命名空间对象，挂上共享的 `on/once/off` 方法；`events` 数组转成 `Set` 作为 `assertEvent` 的查询索引。
 
 **调用时机约定**：preload 加载时调一次即可；运行期再调合法但无意义（schema 静态）。
 
@@ -186,18 +199,14 @@ Notice.init({ userSchemas: [schema1, schema2, ...] })
 
 ### 4.3 `broadcast`
 
-IPC payload 与元通道数据统一经 serializeForIpc()（详见架构 §7.2）。
+IPC payload 与元通道数据统一经 serializeForIpc()（详见架构 §7.2）。`args` 整体作为一个数组编码——单次序列化调用，接收端一次 spread。
 
 ```js
-function broadcast(fullEventName, data) {
-    const { namespace, eventName } = parseFullEventName(fullEventName);
-    const events = registeredSchemas.get(namespace);
-    if (!events || !events.includes(eventName)) {
-        throw new Error(`Notice 事件 "${fullEventName}" 未注册`);
-    }
-    const safeData = serializeForIpc(data);
+function broadcast(fullEventName, ...args) {
+    assertRegistered(fullEventName);
+    const safeArgs = serializeForIpc(args);
     for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
+        win.webContents.send(EVENT_CHANNEL, fullEventName, safeArgs);
     }
 }
 ```
@@ -205,18 +214,16 @@ function broadcast(fullEventName, data) {
 ### 4.4 `direct`
 
 ```js
-function direct(fullEventName, windowId, data) {
-    const { namespace, eventName } = parseFullEventName(fullEventName);
-    const events = registeredSchemas.get(namespace);
-    if (!events || !events.includes(eventName)) {
-        throw new Error(`Notice 事件 "${fullEventName}" 未注册`);
-    }
+function direct(fullEventName, windowId, ...args) {
+    assertRegistered(fullEventName);
     const win = BrowserWindow.fromId(windowId);
     if (!win) return;   // 窗口已关闭：静默忽略
-    const safeData = serializeForIpc(data);
-    win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
+    const safeArgs = serializeForIpc(args);
+    win.webContents.send(EVENT_CHANNEL, fullEventName, safeArgs);
 }
 ```
+
+**注**：`assertRegistered(fullEventName)` 与旧版内部实现相同——`parseFullEventName` + `registeredSchemas.get(namespace)?.includes(eventName)`，未注册抛错，抛错消息形态不变。
 
 ### 4.5 元通道实现
 
@@ -264,77 +271,130 @@ preload 端 envelope 解包契约详见架构 §7.1；错误还原 `reviveError`
 ```js
 function buildAppNotice() {
     const envelope = ipcRenderer.sendSync(META_GET_SCHEMA_CHANNEL);
-    if (!envelope.ok) throw reviveError(envelope.error);
-    const schemaList = envelope.data;
+    if (!envelope || !envelope.ok) throw reviveError(envelope && envelope.error);
+    const schemaList = envelope.data || [];
 
-    const listeners = new Map();   // fullEventName -> Set<callback>
-
-    // 单一 dispatcher：所有事件共用
-    ipcRenderer.on(EVENT_CHANNEL, (_event, fullEventName, data) => {
-        const cbs = listeners.get(fullEventName);
-        if (cbs) cbs.forEach(cb => cb(data));
-    });
+    // 两级 Map：便于 off() 清空整个 namespace 直接 listeners.delete(namespace)
+    const listeners = new Map();   // namespace -> Map<eventName, Set<callback>>
 
     const appNotice = {};
     for (const { namespace, events } of schemaList) {
-        appNotice[namespace] = {};
-        for (const eventName of events) {
-            const fullEventName = `${namespace}.${eventName}`;
-            appNotice[namespace][eventName] = buildEventApi(fullEventName, listeners);
-        }
+        const eventSet = new Set(events);   // 声明索引，供 on/once/off 做 O(1) 严格校验
+        appNotice[namespace] = buildNamespaceApi(namespace, eventSet, listeners);
     }
+
+    // 单一 dispatcher：从 fullEventName 解析出 namespace / eventName，展开 args 数组
+    ipcRenderer.on(EVENT_CHANNEL, (_event, fullEventName, args) => {
+        const idx = fullEventName.indexOf('.');
+        if (idx <= 0) return;
+        const namespace = fullEventName.slice(0, idx);
+        const eventName = fullEventName.slice(idx + 1);
+        const byEvent = listeners.get(namespace);
+        if (!byEvent) return;
+        const cbs = byEvent.get(eventName);
+        if (!cbs) return;
+        // Snapshot：once-wrappers 触发时会 mutate cbs，避免迭代破坏
+        for (const cb of [...cbs]) cb(...args);
+    });
+
     return appNotice;
 }
 ```
 
-### 5.3 `buildEventApi` —— on / once / off
+### 5.3 `buildNamespaceApi` —— on / once / off
+
+namespace 级 API：所有事件共用同一份 `on/once/off`，事件名作为第一个参数传入。严格模式——未声明事件与非函数回调均抛错。
 
 ```js
-function buildEventApi(fullEventName, listeners) {
-    const ensureSet = () => {
-        if (!listeners.has(fullEventName)) listeners.set(fullEventName, new Set());
-        return listeners.get(fullEventName);
+function buildNamespaceApi(namespace, eventSet, listeners) {
+    const assertEvent = eventName => {
+        if (!eventSet.has(eventName)) {
+            throw new Error(`Notice event "${namespace}.${eventName}" not registered`);
+        }
     };
-    const unsubscribe = cb => {
-        const cbs = listeners.get(fullEventName);
+    const assertFn = (cb, api) => {
+        if (typeof cb !== 'function') {
+            throw new Error(`Notice ${namespace}.${api} callback must be a function`);
+        }
+    };
+    const ensureSet = eventName => {
+        let byEvent = listeners.get(namespace);
+        if (!byEvent) { byEvent = new Map(); listeners.set(namespace, byEvent); }
+        let cbs = byEvent.get(eventName);
+        if (!cbs) { cbs = new Set(); byEvent.set(eventName, cbs); }
+        return cbs;
+    };
+    const unsubscribe = (eventName, cb) => {
+        const byEvent = listeners.get(namespace);
+        if (!byEvent) return;
+        const cbs = byEvent.get(eventName);
         if (!cbs) return;
         cbs.delete(cb);
-        if (cbs.size === 0) listeners.delete(fullEventName);
+        if (cbs.size === 0) byEvent.delete(eventName);
+        if (byEvent.size === 0) listeners.delete(namespace);
     };
+
     return {
-        on(cb) {
-            ensureSet().add(cb);
-            return () => unsubscribe(cb);
+        on(eventName, cb) {
+            assertEvent(eventName);
+            assertFn(cb, 'on');
+            ensureSet(eventName).add(cb);
+            return () => unsubscribe(eventName, cb);
         },
-        once(cb) {
-            const wrapper = data => {
-                unsubscribe(wrapper);
-                cb(data);
+        once(eventName, cb) {
+            assertEvent(eventName);
+            assertFn(cb, 'once');
+            const wrapper = (...args) => {
+                unsubscribe(eventName, wrapper);
+                cb(...args);
             };
-            ensureSet().add(wrapper);
-            return () => unsubscribe(wrapper);
+            ensureSet(eventName).add(wrapper);
+            return () => unsubscribe(eventName, wrapper);
         },
-        off(cb) {
-            if (!cb) listeners.delete(fullEventName);
-            else unsubscribe(cb);
+        off(eventName, cb) {
+            if (eventName === undefined) {   // off() —— 清空该 namespace 全部订阅
+                listeners.delete(namespace);
+                return;
+            }
+            assertEvent(eventName);
+            if (cb === undefined) {          // off(eventName) —— 清空该事件全部订阅
+                const byEvent = listeners.get(namespace);
+                if (byEvent) {
+                    byEvent.delete(eventName);
+                    if (byEvent.size === 0) listeners.delete(namespace);
+                }
+                return;
+            }
+            assertFn(cb, 'off');             // off(eventName, cb) —— 精确解绑
+            unsubscribe(eventName, cb);
         },
     };
 }
 ```
 
+**关键点**：
+
+- 校验顺序：`assertEvent` 先于 `assertFn`——事件名错是更根本的错
+- `off()` 是"清空整个 namespace"的大杀器，不做事件名校验（`off()` 语义上无对应事件）
+- `once` 的 wrapper 用 `(...args)` 转发，与主端 rest args + dispatcher spread 对称
+- 未定义 namespace 的 `appNotice[ns]` 属性直接不存在，`appNotice.unknown.on(...)` 会在解引用时报 `Cannot read properties of undefined` —— 属 JS 原生行为，不是 M3 的错误契约
+
 ### 5.4 数据流
 
 ```
-主端 broadcast / direct  ──→  webContents.send('notice:event', fullEventName, serializeForIpc(data))
+主端 broadcast(fullEventName, ...args) / direct(fullEventName, windowId, ...args)
+                                            │
+                                            ▼
+              webContents.send('notice:event', fullEventName, serializeForIpc(args))
                                             │
                                             ▼
 preload  ipcRenderer.on('notice:event', dispatcher)
                                             │
                                             ▼
-                              listeners.get(fullEventName).forEach(cb => cb(data))
+                    listeners.get(ns).get(event) 派发到 Set<cb>，回调收到 cb(...args)
 ```
 
-每个订阅回调被同步调用，`data` 已是 plain serializeForIpc 过的数据。
+每个订阅回调被同步调用，`args` 已是 plain serializeForIpc 过的数组，回调按位置解构。
 
 ### 5.5 contextBridge 边界
 
@@ -347,11 +407,11 @@ preload  ipcRenderer.on('notice:event', dispatcher)
 | 方向 | 接口 | 说明 |
 |---|---|---|
 | 用户主端 → M3 | `Notice.init({ userSchemas })` | 一次性挂载 schema |
-| 用户主端 → M3 | `Notice.broadcast(fullEvent, data)` | 推送所有窗口 |
-| 用户主端 → M3 | `Notice.direct(fullEvent, windowId, data)` | 推送指定窗口（窗口不存在静默忽略） |
+| 用户主端 → M3 | `Notice.broadcast(fullEvent, ...args)` | 推送所有窗口，任意个 payload 参数 |
+| 用户主端 → M3 | `Notice.direct(fullEvent, windowId, ...args)` | 推送指定窗口（窗口不存在静默忽略），任意个 payload 参数 |
 | 用户主端 → M3 | `Notice.cleanup()` | 关停清理 |
 | 用户 preload → 聚合入口 | `require('@base-client/toolkit/preload').init()` | 间接装配 appNotice |
-| 用户渲染端 ← M3（间接） | `window.appNotice.{namespace}.{event}.on/once/off` | 由聚合入口经 contextBridge 暴露 |
+| 用户渲染端 ← M3（间接） | `window.appNotice.{namespace}.on(eventName, cb)` / `.once(eventName, cb)` / `.off(eventName?, cb?)` | 由聚合入口经 contextBridge 暴露；namespace 级 API，事件名作首参 |
 | M3 preload → 聚合入口 | `module.exports = buildAppNotice` | 由 `src/preload.js` require 后 contextBridge |
 
 ### 6.2 对内依赖
@@ -391,17 +451,19 @@ src/notice/
 
 **`main.js`**
 
-- 公开导出 `init({ userSchemas })`、`broadcast(fullEvent, data)`、`direct(fullEvent, windowId, data)`、`cleanup()`
+- 公开导出 `init({ userSchemas })`、`broadcast(fullEvent, ...args)`、`direct(fullEvent, windowId, ...args)`、`cleanup()`、`validateNoticeSchema(schema)`
 - 内部 `registerSchema(schema)` 完成单 schema 校验与登记
+- 内部 `assertRegistered(fullEvent)` —— parseFullEventName + registeredSchemas 查询
 - 内部状态 `registeredSchemas: Map<namespace, eventList>`
-- 内部 `parseFullEventName(fullEvent)` —— `split('.')` 解析
+- 内部 `parseFullEventName(fullEvent)` —— `indexOf('.')` 解析
 - 注册元通道 `notice:getSchema`
 
 **`preload.js`**
 
 - 导出 `buildAppNotice()` 工厂
-- 内部 `buildEventApi(fullEvent, listeners)` 包装器
-- 单一 `ipcRenderer.on('notice:event', dispatcher)` 派发
+- 内部 `buildNamespaceApi(namespace, eventSet, listeners)` —— namespace 级 on/once/off 工厂，含 assertEvent / assertFn 严格校验
+- 内部状态 `listeners: Map<namespace, Map<eventName, Set<cb>>>`（两级 Map）
+- 单一 `ipcRenderer.on('notice:event', dispatcher)` 派发：解析 fullEventName、按 `[...cbs]` snapshot 迭代、`cb(...args)` 展开
 - **不**自动 init、**不**调用 `contextBridge`——由聚合入口 `src/preload.js` 装配
 
 **`protocol.js`**
