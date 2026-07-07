@@ -151,7 +151,7 @@ const result = await window.appService.example.echo('hello');
 const sync   = window.appService.example.echoSync('hello');
 
 // notice schema 暴露的事件
-const off = window.appNotice.example.tick.on(data => {
+const off = window.appNotice.example.on('tick', data => {
     console.log('tick at', data.ts);
 });
 ```
@@ -224,7 +224,7 @@ const text = await window.appService.example.echo('renderer side');
 const sync = window.appService.example.echoSync('renderer side');
 
 // 订阅 notice 事件
-const off = window.appNotice.example.tick.on(data => {
+const off = window.appNotice.example.on('tick', data => {
     console.log('tick at', data.ts);
 });
 ```
