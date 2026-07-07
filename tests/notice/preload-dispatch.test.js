@@ -137,4 +137,37 @@ describe('single dispatcher', () => {
         expect(onceCb).toHaveBeenCalledTimes(1);
         expect(onCb).toHaveBeenCalledWith({ v: 1 });
     });
+
+    // Documents CURRENT dispatcher behavior (see TODOs.md): dispatcher does not
+    // isolate throwing callbacks. If one cb throws, its error propagates to the
+    // caller and subsequent cbs in the same event may not run. Also, once() unsubscribes
+    // its wrapper BEFORE invoking cb — so a throwing once-cb loses its subscription
+    // without a successful invocation. Change these behaviors only after updating spec.
+    it('cb that throws propagates to caller; subsequent cbs may not run (documented)', () => {
+        const api = build([{ namespace: 'foo', events: ['a'] }]);
+        const good = vi.fn();
+        api.foo.on('a', () => { throw new Error('one cb failed'); });
+        api.foo.on('a', good);
+
+        const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
+        let threw = false;
+        try { dispatcher({}, 'foo.a', [{ v: 1 }]); } catch { threw = true; }
+        expect(threw).toBe(true);
+        expect(good).not.toHaveBeenCalled();
+    });
+
+    it('once cb that throws is already unsubscribed (documented)', () => {
+        const api = build([{ namespace: 'foo', events: ['a'] }]);
+        const cb = vi.fn(() => { throw new Error('once failed'); });
+        api.foo.once('a', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get(EVENT_CHANNEL);
+        // First push: cb throws but was already unsubscribed by wrapper
+        try { dispatcher({}, 'foo.a', [{ v: 1 }]); } catch { /* expected */ }
+        expect(cb).toHaveBeenCalledTimes(1);
+
+        // Second push: no listener remains, no invocation
+        dispatcher({}, 'foo.a', [{ v: 2 }]);
+        expect(cb).toHaveBeenCalledTimes(1);
+    });
 });
