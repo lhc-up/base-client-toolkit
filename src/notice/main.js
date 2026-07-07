@@ -121,15 +121,15 @@ function broadcast(fullEventName, ...args) {
  *
  * @param {string} fullEventName 形如 "namespace.event"
  * @param {number} windowId BrowserWindow.id
- * @param {*} data 推送 payload；经 serializeForIpc 编码后发送
+ * @param {...*} args 推送 payload 参数（任意个，含零个）；整体经 serializeForIpc 编码为数组后发送
  * @throws {Error} 事件未注册抛错
  */
-function direct(fullEventName, windowId, data) {
+function direct(fullEventName, windowId, ...args) {
     assertRegistered(fullEventName);
     const win = BrowserWindow.fromId(windowId);
     if (!win) return;
-    const safeData = serializeForIpc(data);
-    win.webContents.send(EVENT_CHANNEL, fullEventName, safeData);
+    const safeArgs = serializeForIpc(args);
+    win.webContents.send(EVENT_CHANNEL, fullEventName, safeArgs);
 }
 
 /**

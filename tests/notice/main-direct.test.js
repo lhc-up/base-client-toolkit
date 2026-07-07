@@ -44,7 +44,7 @@ describe('direct', () => {
         expect(() => Notice.direct('foo.unknown', 1, {})).toThrow(/not registered/);
     });
 
-    it('sends to the window returned by fromId(windowId)', () => {
+    it('sends args as array to the window returned by fromId(windowId)', () => {
         const w = makeWin();
         BrowserWindow.fromId.mockImplementation(id => (id === 42 ? w : null));
 
@@ -54,7 +54,7 @@ describe('direct', () => {
         expect(w.webContents.send).toHaveBeenCalledWith(
             EVENT_CHANNEL,
             'foo.evA',
-            { hello: 'world' },
+            [{ hello: 'world' }],
         );
     });
 
@@ -70,14 +70,47 @@ describe('direct', () => {
         expect(BrowserWindow.getAllWindows).not.toHaveBeenCalled();
     });
 
-    it('payload passes through serialize', () => {
+    it('args pass through serialize', () => {
         const w = makeWin();
         BrowserWindow.fromId.mockReturnValue(w);
 
         Notice.direct('foo.evA', 1, { d: new Date('2026-01-01T00:00:00.000Z'), n: 5 });
 
-        const payload = w.webContents.send.mock.calls[0][2];
-        expect(payload.d).toBe('2026-01-01T00:00:00.000Z');
-        expect(payload.n).toBe(5);
+        const sentArgs = w.webContents.send.mock.calls[0][2];
+        expect(Array.isArray(sentArgs)).toBe(true);
+        expect(sentArgs.length).toBe(1);
+        expect(sentArgs[0].d).toBe('2026-01-01T00:00:00.000Z');
+        expect(sentArgs[0].n).toBe(5);
+    });
+
+    it('accepts multiple args (rest params) and sends them as an array', () => {
+        const w = makeWin();
+        BrowserWindow.fromId.mockReturnValue(w);
+
+        Notice.direct('foo.evA', 7, 'chunk-a', 42, { done: false });
+
+        expect(w.webContents.send).toHaveBeenCalledWith(
+            EVENT_CHANNEL,
+            'foo.evA',
+            ['chunk-a', 42, { done: false }],
+        );
+    });
+
+    it('accepts zero args (pure notification) and sends an empty array', () => {
+        const w = makeWin();
+        BrowserWindow.fromId.mockReturnValue(w);
+
+        Notice.direct('foo.evA', 7);
+
+        expect(w.webContents.send).toHaveBeenCalledWith(
+            EVENT_CHANNEL,
+            'foo.evA',
+            [],
+        );
+    });
+
+    it('does not throw when window is null even with zero args', () => {
+        BrowserWindow.fromId.mockReturnValue(null);
+        expect(() => Notice.direct('foo.evA', 999)).not.toThrow();
     });
 });
