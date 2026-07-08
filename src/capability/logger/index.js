@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
 
 let state = null;
 
@@ -19,6 +20,37 @@ function assertInitialized() {
     if (!state) {
         throw new Error('[toolkit/logger] Logger not initialized');
     }
+}
+
+/**
+ * 参数预处理（T-01 spec §4.3）：
+ * 1. Error → stack 若含 message 只 push stack；否则 push message + stack
+ * 2. Object → JSON.stringify，循环引用等失败 fallback util.inspect
+ * 3. 其他类型透传
+ */
+function serialize(args) {
+    const expanded = [];
+    for (const arg of args) {
+        if (arg instanceof Error) {
+            const { message, stack } = arg;
+            if (stack && stack.includes(message)) {
+                expanded.push(stack);
+            } else {
+                expanded.push(message, stack);
+            }
+        } else {
+            expanded.push(arg);
+        }
+    }
+    return expanded.map((v) => {
+        if (v === null) return v;
+        if (typeof v !== 'object') return v;
+        try {
+            return JSON.stringify(v);
+        } catch (_) {
+            return util.inspect(v, { depth: 4, breakLength: Infinity });
+        }
+    });
 }
 
 function init(opts) {
@@ -79,32 +111,32 @@ function shutdown() {
 
 function trace(msg, ...args) {
     assertInitialized();
-    state.logger.trace(msg, ...args);
+    state.logger.trace(...serialize([msg, ...args]));
 }
 
 function debug(msg, ...args) {
     assertInitialized();
-    state.logger.debug(msg, ...args);
+    state.logger.debug(...serialize([msg, ...args]));
 }
 
 function info(msg, ...args) {
     assertInitialized();
-    state.logger.info(msg, ...args);
+    state.logger.info(...serialize([msg, ...args]));
 }
 
 function warn(msg, ...args) {
     assertInitialized();
-    state.logger.warn(msg, ...args);
+    state.logger.warn(...serialize([msg, ...args]));
 }
 
 function error(msg, ...args) {
     assertInitialized();
-    state.logger.error(msg, ...args);
+    state.logger.error(...serialize([msg, ...args]));
 }
 
 function fatal(msg, ...args) {
     assertInitialized();
-    state.logger.fatal(msg, ...args);
+    state.logger.fatal(...serialize([msg, ...args]));
 }
 
 const serviceSchema = {
