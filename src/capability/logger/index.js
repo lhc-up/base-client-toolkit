@@ -13,6 +13,8 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
+const log4js = require('log4js');
+const { app } = require('electron');
 
 let state = null;
 
@@ -57,9 +59,6 @@ function init(opts) {
     if (state) {
         throw new Error('[toolkit/logger] Logger already initialized');
     }
-    const log4js = require('log4js');
-    const { app } = require('electron');
-
     const logDir = (opts && opts.logDir)
         || path.join(app.getPath('userData'), 'Logs');
 
