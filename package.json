@@ -22,9 +22,14 @@
     "license": "ISC",
     "description": "",
     "peerDependencies": {
-        "electron": ">=15.0.0"
+        "electron": ">=15.0.0",
+        "log4js": ">=6 <7"
+    },
+    "peerDependenciesMeta": {
+        "log4js": { "optional": true }
     },
     "devDependencies": {
+        "log4js": "^6.9.1",
         "vitest": "^2.1.9"
     },
     "dependencies": {
