@@ -111,11 +111,13 @@ function shutdown() {
 
 function trace(msg, ...args) {
     assertInitialized();
+    if (!state.isDev) return;
     state.logger.trace(...serialize([msg, ...args]));
 }
 
 function debug(msg, ...args) {
     assertInitialized();
+    if (!state.isDev) return;
     state.logger.debug(...serialize([msg, ...args]));
 }
 
