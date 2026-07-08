@@ -1,1 +1,2 @@
 - [ ] 考虑 M3 Notice dispatcher 加 try/catch 隔离 cb 抛错，防止一个 cb 抛错阻断同事件后续订阅者；once 的 wrapper 是"先 unsubscribe 再 cb"，若加 try/catch 需一并考虑是否补发。当前行为在 tests/notice/preload-dispatch.test.js 已标注（'documented'）。改前需更新 spec。
+- [ ] [T-01 接入] logger capability spec 已完成（docs/superpowers/specs/2026-07-08-toolkit-t01-logger-design.md），plan 待启动。
