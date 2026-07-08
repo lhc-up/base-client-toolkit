@@ -23,10 +23,10 @@ describe('capability/logger: zero side effects on require', () => {
         // T-01 spec §2.3 / §3.2 明确要求 log4js 与 electron 延迟到 init 时刻 require；
         // 这里断言模块顶层没有这两者的 require 语句。
         const source = fs.readFileSync(modulePath, 'utf8');
-        // 顶层无 electron require
-        expect(source).not.toMatch(/^\s*(?:const|let|var)?\s*[^\n]*require\(['"]electron['"]\)/m);
+        // 顶层无 electron require（"顶层" = 行首无缩进；init 函数体内 require 因缩进而豁免）
+        expect(source).not.toMatch(/^(?:(?:const|let|var)\s+)?[^\s\n][^\n]*require\(['"]electron['"]\)/m);
         // 顶层无 log4js require
-        expect(source).not.toMatch(/^\s*(?:const|let|var)?\s*[^\n]*require\(['"]log4js['"]\)/m);
+        expect(source).not.toMatch(/^(?:(?:const|let|var)\s+)?[^\s\n][^\n]*require\(['"]log4js['"]\)/m);
         // 无 service / notice 依赖
         expect(source).not.toMatch(/require\(['"][^'"]*\/service['"]\)/);
         expect(source).not.toMatch(/require\(['"][^'"]*\/notice['"]\)/);
