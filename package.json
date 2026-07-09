@@ -22,10 +22,12 @@
     "license": "ISC",
     "description": "",
     "peerDependencies": {
+        "@vscode/sudo-prompt": ">=9 <10",
         "download": ">=8 <9",
         "electron": ">=15.0.0",
         "electron-store": ">=8 <9",
-        "log4js": ">=6 <7"
+        "log4js": ">=6 <7",
+        "semver": ">=7 <8"
     },
     "peerDependenciesMeta": {
         "log4js": {
@@ -36,12 +38,20 @@
         },
         "electron-store": {
             "optional": true
+        },
+        "semver": {
+            "optional": true
+        },
+        "@vscode/sudo-prompt": {
+            "optional": true
         }
     },
     "devDependencies": {
+        "@vscode/sudo-prompt": "^9.3.2",
         "download": "^8.0.0",
         "electron-store": "^8.2.0",
         "log4js": "^6.9.1",
+        "semver": "^7.8.5",
         "vitest": "^2.1.9"
     },
     "dependencies": {
