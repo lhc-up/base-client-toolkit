@@ -1,8 +1,8 @@
+const { app, BrowserWindow, globalShortcut } = require('electron');
+
 let initialized = false;
 
 function registerDevToolsShortcut(
-    globalShortcut,
-    BrowserWindow,
     keys = 'Command+Control+Alt+F6',
     window = null
 ) {
@@ -23,14 +23,10 @@ function init() {
     if (initialized) {
         throw new Error('[toolkit/shortcut] Shortcut already initialized');
     }
-    const { app, BrowserWindow, globalShortcut } = require('electron');
-
-    registerDevToolsShortcut(globalShortcut, BrowserWindow);
-
+    registerDevToolsShortcut();
     app.on('will-quit', function () {
         globalShortcut.unregisterAll();
     });
-
     initialized = true;
 }
 
