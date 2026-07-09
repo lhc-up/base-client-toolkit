@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const log4js = require('log4js');
 const { app } = require('electron');
@@ -50,7 +49,6 @@ function init(userOpts) {
     }
     opts = userOpts || {};
     const logDir = opts.logDir || path.join(app.getPath('userData'), 'Logs');
-    fs.mkdirSync(logDir, { recursive: true });
     log4js.configure({
         appenders: {
             console: {
