@@ -42,7 +42,7 @@ toolkit **不是**统一运行时框架，也**不**向用户运行时代码注�
 
 4. **IPC 安全** —— 所有 IPC payload 经 `shared/serializer` 统一编码，业务零修改，永不因不可克隆字段（函数 / Symbol / 类实例 / 循环引用 / Date / Buffer 等）而崩溃。
 
-5. **零运行时侵入** —— `require` 模块不产生副作用，所有生效必须经用户显式 `init` 调用；用户 preload / main 入口完全由用户掌控，toolkit 只提供工具与机制。
+5. **顶层装配、按需引入** —— capability 模块被 `require` 时借助 CommonJS 缓存机制**顶层完成一次运行时装配**（`log4js.configure` / `new Store` / `app.on('will-quit')` 等），无 init 生命周期。业务参数（如 `corePkg`、URL、文件路径）在函数被显式调用时以实参传入，不通过 init/opts 收。M2 Service / M3 Notice 保留一次性 `init(...)` 挂载 schema。用户 preload / main 入口完全由用户掌控。
 
 ---
 
@@ -50,13 +50,22 @@ toolkit **不是**统一运行时框架，也**不**向用户运行时代码注�
 
 7 条运行时架构承诺。任何模块设计与它冲突就是错的。review 时对照检查。
 
-### §3.1 `require` 零副作用
+### §3.1 `require` 有限副作用
 
-toolkit 任何模块被 `require` 时**不得**触发 IPC 注册、文件系统 IO、网络请求、全局状态变更。所有副作用必须在用户**显式调用**方法（如 `Service.init` / `Notice.init`）时才发生。
+toolkit 任何模块被 `require` 时**允许**以下 CommonJS 缓存一次即完成的副作用：
 
-**capability 特化**：capability 的 `index.js` 亦**不得 `require` Service / Notice** —— 只导出 plain data + 函数引用；是否真注册由用户 `init` 时决定。
+- 消费 `src/paths.js#getFilePathConfig()` 得到默认路径（会 `fse.ensureDirSync` 建目录）
+- 顶层完成运行时装配（如 `log4js.configure`、`new Store({ cwd })`、挂 `app.on('will-quit')`）
+- 顶层 `require` 已声明的 DAG 依赖 capability（详见 §3.6）
 
-**架构意义**：toolkit 是"用户完全掌控生效时机与范围"的工具库，而非注入式框架。
+**仍不允许**：
+
+- 依赖业务侧参数（业务参数只能在函数被显式调用时作为实参传入）
+- 发起网络请求
+- 注册 IPC channel（IPC channel 挂载仍由 `Service.init` / `Notice.init` 承担）
+- 顶层 `require` M2 Service / M3 Notice（capability 只导出 schema 描述对象；是否真注册由用户在业务侧 `Service.init({ userSchemas })` 决定）
+
+**架构意义**：CommonJS 有模块缓存，`require` 时的初始化代码只跑一次。把配置延后到 `init(opts)` 与"顶层跑一次"在**执行次数**上等价，为"防止重复执行"设立 init 是误诊。取消 init 后 API 收敛，业务侧写法从 N 个 `xxx.init(...)` 收敛到"直接 require 即可用"。
 
 ### §3.2 渲染进程零本地 I/O
 
@@ -98,13 +107,29 @@ toolkit 中所有**需要在渲染进程加载**的代码，禁止 `require('ele
 
 **架构意义**：preload 层是渲染↔主握手关键点；一次性 + opt-out 双保险，防渲染进程死锁。
 
-### §3.6 模块间独立
+### §3.6 模块间依赖方向
 
-M2 Service / M3 Notice / M4 BaseWindow / M5 capability 相互独立，**互不 `require`**。
+M2 Service / M3 Notice / M4 BaseWindow 相互独立，**互不 `require`**。M5 capability 之间允许 **DAG（有向无环图）依赖**。
 
-**允许的依赖方向**：M2 / M3 同向依赖 M1；M4 只依赖 `electron` + `lodash.merge`；capability 只导出 schema 描述对象，不 require Service / Notice 或其他 capability。
+**允许的依赖方向**：
 
-**架构意义**：每模块可独立设计、实现、测试、发布；用户按需引入不承担多余依赖。
+- M2 / M3 同向依赖 M1
+- M4 只依赖 `electron` + `lodash.merge`
+- capability 顶层可 `require` `src/paths.js`、`shared/*` 与**其它 capability**（构成 DAG，禁止环）
+- capability 依然**不得**顶层 `require` M2 Service / M3 Notice —— 只导出 schema 描述对象，由用户在业务侧挂载
+
+**运行时假设**：因 CommonJS 缓存机制，capability A 顶层 `require` B 时，B 顶层装配已完成，A 内部使用 B 的 API 无需再校验"B 是否已初始化"。
+
+**当前 capability DAG 落地**：
+
+- `os` → `logger`
+- `store` → `logger`
+- `update` → `logger`、`os`
+- `logger`、`shortcut`、`singleInstance` → 无 capability 依赖
+
+**环检测**：建议在 CI 里加一段静态扫描（scan `src/capability/*/index.js` 顶层 `require('../<name>')`，跑 DAG 环检测）。
+
+**架构意义**：每模块可独立设计、实现、测试、发布；capability 层允许 DAG 引用避免业务侧写重复"依赖装配"样板。
 
 ### §3.7 命名空间口径
 

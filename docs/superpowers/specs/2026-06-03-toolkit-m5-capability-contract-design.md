@@ -195,8 +195,8 @@ module.exports = {
 要点：
 
 - **`echo` 在三处出现**——顶层导出（主端直接用）、`serviceSchema.handlers.echo`（IPC 异步通道）、`sync: ['echo']`（IPC 同步通道）。三处指向**同一份函数引用**。
-- **零副作用** —— `require` 该模块只产生上述对象，不触发任何 IPC 注册 / IO。
-- **零依赖 Service / Notice** —— 文件顶部无 `require('@base-client/toolkit/service')` 等。
+- **本示例无顶层装配** —— `echo` 是纯函数，无需路径、无需外部资源，因此 `require` 该模块只产生上述对象。真实 capability 允许在顶层完成运行时装配（详见 §2.4），示例极简仅为讲清 M5 契约的必要面。
+- **顶层不 `require` Service / Notice** —— capability 只导出 schema 描述对象，是否真挂载由用户在业务侧 `Service.init` / `Notice.init` 决定（§2.4 硬性约束）。
 
 capability 的 schema shape 测试若需运行时校验，直接 delegate 到 M2 `validateServiceSchema` / M3 `validateNoticeSchema`（详见架构 §7.5），避免命名 regex 散在多处漂移。
 
