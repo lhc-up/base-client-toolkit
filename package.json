@@ -4,6 +4,7 @@
     "main": "src/index.js",
     "exports": {
         ".": "./src/index.js",
+        "./paths": "./src/paths.js",
         "./preload": "./src/preload.js",
         "./service": "./src/service/main.js",
         "./service/preload": "./src/service/preload.js",

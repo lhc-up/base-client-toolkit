@@ -21,7 +21,7 @@ const { app, dialog, shell } = require('electron');
 
 const logger = require('../logger');
 const { isLinux, isLoongnix, isWindows } = require('../os');
-const { getFilePathConfig } = require('../../shared/paths');
+const { getFilePathConfig } = require('../../paths');
 
 const filePathConfig = getFilePathConfig();
 

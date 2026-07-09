@@ -9,7 +9,7 @@
 const fse = require('fs-extra');
 const path = require('path');
 const logger = require('../logger');
-const { getFilePathConfig } = require('../../shared/paths');
+const { getFilePathConfig } = require('../../paths');
 
 const filePathConfig = getFilePathConfig();
 
