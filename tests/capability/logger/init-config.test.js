@@ -28,8 +28,6 @@ function buildElectronMock(userDataPath = '/tmp/mock-user-data') {
 
 let log4jsMock;
 let electronMock;
-let mkdirSpy;
-let fs;
 
 beforeEach(async () => {
     delete require.cache[modulePath];
@@ -47,28 +45,23 @@ beforeEach(async () => {
         id: electronPath, filename: electronPath, loaded: true,
         exports: electronMock, children: [], paths: [],
     };
-
-    fs = require('fs');
-    mkdirSpy = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
 });
 
 describe('capability/logger: init opts.logDir handling', () => {
-    it('when opts is omitted, uses <userData>/Logs', () => {
+    it('when opts is omitted, uses <userData>/Logs and log4js.configure sees that filename', () => {
         const logger = require('../../../src/capability/logger/index');
         logger.init();
         expect(electronMock.app.getPath).toHaveBeenCalledWith('userData');
-        expect(mkdirSpy).toHaveBeenCalledTimes(1);
-        const [dirArg, optsArg] = mkdirSpy.mock.calls[0];
-        // 路径分隔符统一：仅断言尾段与 recursive 选项
-        expect(String(dirArg)).toMatch(/mock-user-data[\\/]Logs$/);
-        expect(optsArg).toEqual({ recursive: true });
+        const cfg = log4jsMock.configure.mock.calls[0][0];
+        expect(String(cfg.appenders.logs.filename)).toMatch(/mock-user-data[\\/]Logs[\\/]log$/);
     });
 
     it('when opts.logDir is provided, uses it verbatim and does NOT call app.getPath', () => {
         const logger = require('../../../src/capability/logger/index');
         logger.init({ logDir: '/custom/log/path' });
         expect(electronMock.app.getPath).not.toHaveBeenCalled();
-        expect(mkdirSpy).toHaveBeenCalledWith('/custom/log/path', { recursive: true });
+        const cfg = log4jsMock.configure.mock.calls[0][0];
+        expect(String(cfg.appenders.logs.filename)).toMatch(/^[\\/]custom[\\/]log[\\/]path[\\/]log$/);
     });
 
     it('log4js.configure receives filename under the resolved logDir', () => {
