@@ -7,6 +7,8 @@ function buildElectronMock() {
         ipcRenderer: {
             invoke: vi.fn(),
             sendSync: vi.fn(),
+            on: vi.fn(),
+            removeAllListeners: vi.fn(),
         },
     };
 }
@@ -29,6 +31,8 @@ beforeEach(() => {
     delete require.cache[preloadPath];
     ipcRenderer.invoke.mockReset();
     ipcRenderer.sendSync.mockReset();
+    ipcRenderer.on.mockReset();
+    ipcRenderer.removeAllListeners.mockReset();
 });
 
 function build(schemaList) {
@@ -68,14 +72,17 @@ describe('async caller', () => {
         await expect(api.foo.fail()).rejects.toThrow(/out of range/);
     });
 
-    it('args serialized: function arg becomes placeholder', async () => {
+    it('function inside plain-object arg becomes callback channel (T-09)', async () => {
         const api = build([{ namespace: 'foo', handlers: ['take'], sync: [] }]);
         ipcRenderer.invoke.mockResolvedValue(okEnvelope(null));
-        await api.foo.take({ cb: function named() {}, n: 5 });
+        const cb = vi.fn();
+        await api.foo.take({ cb, n: 5 });
 
         const sentArg = ipcRenderer.invoke.mock.calls[0][1];
         expect(sentArg.n).toBe(5);
-        expect(sentArg.cb).toBe('[Function: named]');
+        // channel 字符串格式：<asyncChannel>-<key>-<Date.now()>-<Math.random()>
+        expect(typeof sentArg.cb).toBe('string');
+        expect(sentArg.cb).toMatch(new RegExp(`^${asyncChannel('foo', 'take')}-cb-\\d+-`));
     });
 
     it('Date arg serialized to ISO string', async () => {
@@ -118,7 +125,7 @@ describe('sync caller', () => {
         }).toThrow(/sync bad/);
     });
 
-    it('args serialized before sendSync', () => {
+    it('function inside plain-object arg becomes callback channel (T-09, sync path)', () => {
         const api = build([
             { namespace: 'foo', handlers: ['emit'], sync: ['emit'] },
         ]);
@@ -128,7 +135,8 @@ describe('sync caller', () => {
 
         const sentArg = ipcRenderer.sendSync.mock.calls.at(-1)[1];
         expect(sentArg.n).toBe(1);
-        expect(sentArg.fn).toMatch(/^\[Function/);
+        expect(typeof sentArg.fn).toBe('string');
+        expect(sentArg.fn).toMatch(new RegExp(`^${syncChannel('foo', 'emit')}-fn-\\d+-`));
     });
 
     it('non-sync handler has no Sync variant (regression guard)', () => {
