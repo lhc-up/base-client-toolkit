@@ -23,13 +23,16 @@
     "description": "",
     "peerDependencies": {
         "electron": ">=15.0.0",
-        "log4js": ">=6 <7"
+        "log4js": ">=6 <7",
+        "download": ">=8 <9"
     },
     "peerDependenciesMeta": {
-        "log4js": { "optional": true }
+        "log4js": { "optional": true },
+        "download": { "optional": true }
     },
     "devDependencies": {
         "log4js": "^6.9.1",
+        "download": "^8.0.0",
         "vitest": "^2.1.9"
     },
     "dependencies": {
