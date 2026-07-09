@@ -1,14 +1,58 @@
-const path = require('path');
+/**
+ * Toolkit T-01: capability/logger
+ *
+ * bake logUtil.js 直接照搬（含 print / .bind(logger) / 6 级方法 / shutdown）。
+ * 顶层就求值：log4js.configure + getLogger + isDev。
+ * 无 init —— 业务侧要覆盖日志目录，在 require 本模块之前调 shared/paths.setPathConfig({ log: '...' })。
+ *
+ * 参考：base-client.bake src/main/libs/logUtil.js
+ */
+
 const log4js = require('log4js');
-const { app } = require('electron');
+const path = require('path');
+const { getFilePathConfig } = require('../../shared/paths');
 
-let initialized = false;
-let opts = null;
-let logger = null;
-let isDev = false;
+const { log: logDir } = getFilePathConfig();
 
-// bake logUtil.js print：Error 展开 stack；object → JSON.stringify；
-// 失败（含循环引用）console.log(err, v) 后 raw 透传给 log4js
+function getLogPath(name) {
+    return path.join(logDir, name);
+}
+
+log4js.configure({
+    appenders: {
+        console: {
+            type: 'console',
+            layout: {
+                type: 'pattern',
+                pattern: '[%[%d{yyyy-MM-dd hh:mm:ss}%]] [%[%p%]] - %m%n',
+            },
+        },
+        logs: {
+            type: 'dateFile',
+            filename: getLogPath('log'),
+            fileNameSep: '-',
+            pattern: 'yyyy-MM-dd.log',
+            alwaysIncludePattern: true,
+            layout: {
+                type: 'pattern',
+                pattern: '[%d{yyyy-MM-dd hh:mm:ss.SSS}] [%p] - %m',
+            },
+            compress: true,
+            maxLogSize: '100K',
+            numBackups: 20,
+        },
+    },
+    categories: {
+        default: {
+            appenders: ['console', 'logs'],
+            level: 'trace',
+        },
+    },
+});
+
+const logger = log4js.getLogger();
+const isDev = process.env.NODE_ENV === 'development';
+
 function print(fn, ...args) {
     let params = [];
     for (const arg of args) {
@@ -37,114 +81,34 @@ function print(fn, ...args) {
     fn(...params);
 }
 
-function assertInitialized() {
-    if (!initialized) {
-        throw new Error('[toolkit/logger] Logger not initialized');
-    }
-}
-
-function init(userOpts) {
-    if (initialized) {
-        throw new Error('[toolkit/logger] Logger already initialized');
-    }
-    opts = userOpts || {};
-    const logDir = opts.logDir || path.join(app.getPath('userData'), 'Logs');
-    log4js.configure({
-        appenders: {
-            console: {
-                type: 'console',
-                layout: {
-                    type: 'pattern',
-                    pattern: '[%[%d{yyyy-MM-dd hh:mm:ss}%]] [%[%p%]] - %m%n',
-                },
-            },
-            logs: {
-                type: 'dateFile',
-                filename: path.join(logDir, 'log'),
-                fileNameSep: '-',
-                pattern: 'yyyy-MM-dd.log',
-                alwaysIncludePattern: true,
-                layout: {
-                    type: 'pattern',
-                    pattern: '[%d{yyyy-MM-dd hh:mm:ss.SSS}] [%p] - %m',
-                },
-                compress: true,
-                maxLogSize: '100K',
-                numBackups: 20,
-            },
-        },
-        categories: {
-            default: {
-                appenders: ['console', 'logs'],
-                level: 'trace',
-            },
-        },
-    });
-    logger = log4js.getLogger();
-    isDev = process.env.NODE_ENV === 'development';
-    initialized = true;
-}
-
-function shutdown() {
-    assertInitialized();
-    log4js.shutdown();
-}
-
-// 各方法 .bind(logger) 传给 print，避免 log4js 方法作为回调时丢 this
-function trace(msg, ...args) {
-    assertInitialized();
-    if (isDev) {
-        print(logger.trace.bind(logger), msg, ...args);
-    }
-}
-
-function debug(msg, ...args) {
-    assertInitialized();
-    if (isDev) {
-        print(logger.debug.bind(logger), msg, ...args);
-    }
-}
-
-function info(msg, ...args) {
-    assertInitialized();
-    print(logger.info.bind(logger), msg, ...args);
-}
-
-function warn(msg, ...args) {
-    assertInitialized();
-    print(logger.warn.bind(logger), msg, ...args);
-}
-
-function error(msg, ...args) {
-    assertInitialized();
-    print(logger.error.bind(logger), msg, ...args);
-}
-
-function fatal(msg, ...args) {
-    assertInitialized();
-    print(logger.fatal.bind(logger), msg, ...args);
-}
-
-const serviceSchema = {
-    namespace: 'logger',
-    handlers: {
-        trace,
-        debug,
-        info,
-        warn,
-        error,
-        fatal,
-    },
-};
-
+// 1、logger 的各个函数都绑定 logger 实例，避免作为回调时 this 找不到
+// 2、预处理各类型的参数
 module.exports = {
-    init,
-    shutdown,
-    trace,
-    debug,
-    info,
-    warn,
-    error,
-    fatal,
-    serviceSchema,
+    trace(msg, ...args) {
+        if (isDev) {
+            print(logger.trace.bind(logger), msg, ...args);
+        }
+    },
+    debug(msg, ...args) {
+        if (isDev) {
+            print(logger.debug.bind(logger), msg, ...args);
+        }
+    },
+    info(msg, ...args) {
+        print(logger.info.bind(logger), msg, ...args);
+    },
+    warn(msg, ...args) {
+        print(logger.warn.bind(logger), msg, ...args);
+    },
+    error(msg, ...args) {
+        print(logger.error.bind(logger), msg, ...args);
+    },
+    fatal(msg, ...args) {
+        print(logger.fatal.bind(logger), msg, ...args);
+    },
+    shutdown() {
+        log4js.shutdown();
+    },
+    // export print 供其它模块共用（bake 也 export）
+    print,
 };

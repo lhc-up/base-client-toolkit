@@ -1,6 +1,11 @@
-const { app, BrowserWindow, globalShortcut } = require('electron');
+/**
+ * Toolkit T-03: capability/shortcut
+ *
+ * 完全照搬 base-client.bake src/main/libs/shortcut.js。
+ * 顶层 app.on('will-quit') 挂钩子；module.exports = function init() 供业务侧显式调用触发注册。
+ */
 
-let initialized = false;
+const { app, BrowserWindow, globalShortcut } = require('electron');
 
 function registerDevToolsShortcut(
     keys = 'Command+Control+Alt+F6',
@@ -12,22 +17,17 @@ function registerDevToolsShortcut(
         for (const win of allWindow) {
             if (win.webContents && !win.webContents.isDevToolsOpened()) {
                 win.webContents.openDevTools({
-                    mode: 'detach'
+                    mode: 'detach',
                 });
             }
         }
     });
 }
 
-function init() {
-    if (initialized) {
-        throw new Error('[toolkit/shortcut] Shortcut already initialized');
-    }
-    registerDevToolsShortcut();
-    app.on('will-quit', function () {
-        globalShortcut.unregisterAll();
-    });
-    initialized = true;
-}
+app.on('will-quit', function () {
+    globalShortcut.unregisterAll();
+});
 
-module.exports = { init };
+module.exports = function init() {
+    registerDevToolsShortcut();
+};

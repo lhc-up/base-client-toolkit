@@ -77,21 +77,24 @@ module.exports = {
 
 - 入口文件遵循总设计的命名约定：单侧入口模块用 `index.js`（与 `shared/serializer/` 一致）
 
-### 2.4 副作用约束（`require` 零副作用）
+### 2.4 副作用约束（有限副作用）
 
-capability 模块在被 `require()` 时不得产生任何副作用（详见架构 §3.1 `require` 零副作用）。
+capability 模块在被 `require()` 时**允许**以下 CommonJS 缓存一次即完成的副作用：
 
-capability 模块在被 `require()` 时**不得产生任何副作用**：
+- 消费 `shared/paths.getFilePathConfig()` 得到默认路径（会 `ensureDirSync` 建目录）
+- 顶层完成能力自身的运行时装配（如 `log4js.configure(...)`、`new Store({ cwd })`、挂 `app.on('will-quit')` 等）
+- 顶层 `require` 已声明的 DAG 依赖 capability（详见 §5.2）
 
-- 不得读写文件系统
-- 不得发起网络请求
-- 不得注册 IPC channel
-- 不得修改全局状态
-- 不得 `require` Service / Notice
+**仍不允许**：
 
-所有副作用必须在用户**显式调用 API 方法或 `Service.init` / `Notice.init` 挂载 schema** 时才发生。
+- 依赖业务侧参数（业务参数只能在函数被显式调用时作为实参传入，如 `getNewestPkg(corePkg)` / `downloadPkg({ url })`）
+- 发起网络请求
+- 注册 IPC channel（IPC channel 挂载仍由 `Service.init` / `Notice.init` 承担）
+- 循环 `require` 其它 capability（DAG 约束，详见 §5.2）
 
-→ 这意味着 capability 模块**零依赖** Service / Notice：它们只导出 schema **描述对象**（plain data + function references），不持有 Service / Notice 的引用。是否真注册由用户决定。
+**修订原因**：CommonJS 有模块缓存，`require` 时的初始化代码只会执行一次；把配置延后到"init 函数"和"顶层执行一次"在**执行次数**上等价。M5 早期版本禁止 require 副作用是为了测试可控，但代价是 API 冗余（每个 capability 都要 init 收无信息量的样板参数）。取消该禁令后，业务侧写法从 N 个 `xxx.init(...)` 收敛到"直接 require 即可用"，与 `base-client.bake` 主端 libs 结构对齐。
+
+→ capability **仍不得** `require('.../service')` / `require('.../notice')` 顶层引用（保 M2 / M3 与 capability 的运行时依赖零耦合）。schema 挂载仍由用户在业务侧完成。
 
 ### 2.5 与 M2 / M3 protocol 的关系
 
@@ -241,20 +244,32 @@ const off = window.appNotice.example.on('tick', data => {
 
 ### 5.2 capability 模块的依赖约束
 
-依赖方向严格按架构 §3.6 模块间独立：capability 模块不得依赖 M2 Service / M3 Notice 或其他 capability。
+capability 依赖方向遵循**有向无环图（DAG）**：允许 capability 引用其它 capability，但禁止循环。
 
 capability 模块自身**可以依赖**：
 
 - Node 内建模块（`fs` / `path` / 等）
 - Electron API（按业务需要）
-- 第三方包
-- 视情况依赖 M1 `shared/serializer`（如内部需要某种序列化，通常不需要）
+- 第三方包（含 optional peerDep）
+- `shared/*`（如 `shared/paths`、`shared/serializer`）
+- **其它 capability 模块**（必须构成 DAG，无环）
 
 capability 模块**不得依赖**：
 
 - M2 Service
 - M3 Notice
-- 其它 capability 模块
+- 与自身构成环的其它 capability
+
+**运行时假设**：capability A 顶层 `require` capability B 时，因 CommonJS 缓存机制，B 顶层的装配代码保证已执行完毕，所以 A 内部使用 B 的 API 无需再校验"B 是否已初始化"。业务侧遵守"require 前不要再改 `shared/paths.setPathConfig`"即可。
+
+**当前 DAG 落地**（示例）：
+
+- `os` → `logger`
+- `store` → `logger`
+- `update` → `logger`、`os`
+- `logger`、`shortcut`、`singleInstance` → 无 capability 依赖
+
+**环检测**：建议在 CI 里加一段静态扫描（scan `src/capability/*/index.js` 顶层 `require('../<name>')`，跑一次 DAG 环检测）。
 
 ### 5.3 M5 不负责
 

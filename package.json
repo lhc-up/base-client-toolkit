@@ -55,6 +55,7 @@
         "vitest": "^2.1.9"
     },
     "dependencies": {
+        "fs-extra": "^11.3.6",
         "lodash.merge": "^4.6.2"
     },
     "files": [
