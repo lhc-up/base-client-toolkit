@@ -1,10 +1,11 @@
 const os = require('os');
 const { execSync } = require('child_process');
 
-let state = null;
+let initialized = false;
+let opts = null;
 
 function assertInitialized() {
-    if (!state) {
+    if (!initialized) {
         throw new Error('[toolkit/os] Os not initialized');
     }
 }
@@ -14,24 +15,23 @@ function assertInitialized() {
  * 当前仅接线 error；将来 os 若需要 info/warn 等，按同模式加对应 report 函数。
  */
 function reportError(err) {
-    if (state.logger && typeof state.logger.error === 'function') {
-        state.logger.error(err);
+    if (opts.logger && typeof opts.logger.error === 'function') {
+        opts.logger.error(err);
     } else {
         console.error(err);
     }
 }
 
 /**
- * @param {object} [opts]
- * @param {object} [opts.logger] 具备 error 方法（未来可能用到其他方法）的 logger 实例
+ * @param {object} [userOpts]
+ * @param {object} [userOpts.logger] 具备 error 方法（未来可能用到其他方法）的 logger 实例
  */
-function init(opts = {}) {
-    if (state) {
+function init(userOpts) {
+    if (initialized) {
         throw new Error('[toolkit/os] Os already initialized');
     }
-    state = {
-        logger: opts.logger || null,
-    };
+    opts = userOpts || {};
+    initialized = true;
 }
 
 /**
