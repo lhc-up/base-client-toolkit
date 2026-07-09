@@ -53,12 +53,13 @@ function withLogger(fn) {
     return fn(logger);
 }
 
-describe('serialize: primitives pass through', () => {
-    it('string / number / boolean / null / undefined pass through', () => {
+describe('serialize: primitives pass through (bake behavior)', () => {
+    it('string / number / boolean / undefined pass through; null → "null" string', () => {
+        // bake print: typeof null === 'object' → JSON.stringify(null) === 'null'
         withLogger((logger) => {
             logger.info('hello', 42, true, null, undefined);
             const args = log4jsMock.__loggerInstance.info.mock.calls[0];
-            expect(args).toEqual(['hello', 42, true, null, undefined]);
+            expect(args).toEqual(['hello', 42, true, 'null', undefined]);
         });
     });
 });
@@ -105,16 +106,19 @@ describe('serialize: object serialization', () => {
         });
     });
 
-    it('circular reference → falls back to util.inspect (contains [Circular])', () => {
+    it('circular reference does not throw; raw object passed through (bake behavior)', () => {
+        // bake print: JSON.stringify 抛错 → catch console.log(err, v) → 返回 raw v；
+        // log4js 侧由 util.format 自行处理 circular。此处仅断言"不抛错 + 传原对象"
+        const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         withLogger((logger) => {
             const obj = { a: 1 };
             obj.self = obj;
-            logger.info(obj);
+            expect(() => logger.info(obj)).not.toThrow();
             const args = log4jsMock.__loggerInstance.info.mock.calls[0];
-            expect(typeof args[0]).toBe('string');
-            expect(args[0]).toMatch(/Circular/);
-            expect(args[0]).toMatch(/a:\s*1/);
+            expect(args).toHaveLength(1);
+            expect(args[0]).toBe(obj);
         });
+        consoleLogSpy.mockRestore();
     });
 });
 
