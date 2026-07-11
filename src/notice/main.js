@@ -9,12 +9,16 @@ const {
 
 const registeredSchemas = new Map();
 
+// 顶层保留字：preload 端 appNotice 顶层挂 subscribe/unsubscribe/once 语法糖，
+// namespace 名与之冲突会覆盖顶层方法。此处对齐禁用，让用户 init 就早报错。
+const RESERVED_TOP_LEVEL_KEYS = new Set(['subscribe', 'unsubscribe', 'once']);
+
 /**
  * 校验 Notice schema 的形态与命名合规（详见架构 §7.5）。
  * 抛错则 schema 不合规；无返回值。
  *
  * @param {Object} schema
- * @param {string} schema.namespace 合法 JS 标识符
+ * @param {string} schema.namespace 合法 JS 标识符，且不为顶层保留字（subscribe / unsubscribe / once）
  * @param {string[]} schema.events 事件名数组，每项须为合法 JS 标识符
  * @throws {Error} 任何不合规抛错
  */
@@ -27,6 +31,12 @@ function validateNoticeSchema(schema) {
         throw new Error(
             `Notice schema namespace "${namespace}" invalid ` +
             `(must match /^[A-Za-z_][A-Za-z0-9_]*$/)`,
+        );
+    }
+    if (RESERVED_TOP_LEVEL_KEYS.has(namespace)) {
+        throw new Error(
+            `Notice schema namespace "${namespace}" collides with top-level API ` +
+            `(reserved: subscribe / unsubscribe / once)`,
         );
     }
     if (!Array.isArray(events)) {

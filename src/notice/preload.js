@@ -2,6 +2,26 @@ const { ipcRenderer } = require('electron');
 const { reviveError } = require('../shared/serializer/reviveError');
 const { EVENT_CHANNEL, META_GET_SCHEMA_CHANNEL } = require('./protocol');
 
+// 顶层保留字：与 subscribe/unsubscribe/once 顶层语法糖共享同一命名空间字典
+// 键。若某 schema 用了同名 namespace，构建时抛错以避免顶层方法被覆盖。
+const TOP_LEVEL_KEYS = new Set(['subscribe', 'unsubscribe', 'once']);
+
+function parseFullEventName(fullEventName) {
+    if (typeof fullEventName !== 'string') {
+        throw new Error('Notice fullEventName must be a string');
+    }
+    const idx = fullEventName.indexOf('.');
+    if (idx <= 0 || idx === fullEventName.length - 1) {
+        throw new Error(
+            `Notice fullEventName "${fullEventName}" malformed (expected "ns.event")`,
+        );
+    }
+    return {
+        namespace: fullEventName.slice(0, idx),
+        eventName: fullEventName.slice(idx + 1),
+    };
+}
+
 function buildNamespaceApi(namespace, eventSet, listeners) {
     const assertEvent = eventName => {
         if (!eventSet.has(eventName)) {
@@ -70,12 +90,25 @@ function buildNamespaceApi(namespace, eventSet, listeners) {
 /**
  * 构建渲染端 appNotice API。preload 加载时调用一次。
  *
- * 返回形态：{ [namespace]: { on(eventName, cb), once(eventName, cb), off(eventName?, cb?) } }
+ * 返回形态：
+ * ```
+ * {
+ *   [namespace]: { on(eventName, cb), once(eventName, cb), off(eventName?, cb?) },
+ *   subscribe(fullEventName, cb),      // 顶层语法糖：等价 [ns].on(event, cb)
+ *   unsubscribe(fullEventName, cb?),   // 顶层语法糖：等价 [ns].off(event, cb?)
+ *   once(fullEventName, cb),           // 顶层语法糖：等价 [ns].once(event, cb)
+ * }
+ * ```
+ *
+ * 顶层 subscribe/unsubscribe/once 与 [ns].on/off/once 共享同一订阅存储，任选一路
+ * 注册的回调都能被同一 dispatcher 触发，可互相拆卸。namespace 名撞上顶层保留字
+ * (subscribe/unsubscribe/once) 时构建抛错。
  *
  * 详见架构 §3.5（preload 一次性 init 与 opt-out 契约）与 M3 spec §5.2 / §5.3。
  *
  * @returns {Object} appNotice
- * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error
+ * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error；
+ *                 namespace 与顶层保留字冲突时抛错
  */
 function buildAppNotice() {
     const envelope = ipcRenderer.sendSync(META_GET_SCHEMA_CHANNEL);
@@ -88,9 +121,39 @@ function buildAppNotice() {
     const appNotice = {};
 
     for (const { namespace, events } of schemaList) {
+        if (TOP_LEVEL_KEYS.has(namespace)) {
+            throw new Error(
+                `Notice namespace "${namespace}" collides with top-level API ` +
+                `(reserved: subscribe / unsubscribe / once)`,
+            );
+        }
         const eventSet = new Set(events);
         appNotice[namespace] = buildNamespaceApi(namespace, eventSet, listeners);
     }
+
+    const resolveNsApi = (fullEventName, api) => {
+        const { namespace, eventName } = parseFullEventName(fullEventName);
+        const nsApi = appNotice[namespace];
+        if (!nsApi) {
+            throw new Error(
+                `Notice ${api}: namespace "${namespace}" not registered`,
+            );
+        }
+        return { nsApi, eventName };
+    };
+
+    appNotice.subscribe = (fullEventName, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEventName, 'subscribe');
+        return nsApi.on(eventName, cb);
+    };
+    appNotice.unsubscribe = (fullEventName, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEventName, 'unsubscribe');
+        nsApi.off(eventName, cb);
+    };
+    appNotice.once = (fullEventName, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEventName, 'once');
+        return nsApi.once(eventName, cb);
+    };
 
     ipcRenderer.on(EVENT_CHANNEL, (_event, fullEventName, args) => {
         if (typeof fullEventName !== 'string') return;

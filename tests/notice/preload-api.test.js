@@ -73,9 +73,13 @@ describe('buildAppNotice: factory output shape', () => {
         expect(() => loadBuilder()()).toThrow(/meta failed/);
     });
 
-    it('empty schema list yields empty api object', () => {
+    it('empty schema list yields only the top-level syntactic-sugar API', () => {
         ipcRenderer.sendSync.mockReturnValue(okEnvelope([]));
-        expect(loadBuilder()()).toEqual({});
+        const api = loadBuilder()();
+        expect(Object.keys(api).sort()).toEqual(['once', 'subscribe', 'unsubscribe']);
+        expect(typeof api.subscribe).toBe('function');
+        expect(typeof api.unsubscribe).toBe('function');
+        expect(typeof api.once).toBe('function');
     });
 });
 
@@ -261,5 +265,111 @@ describe('strict callback-type validation', () => {
         // Undeclared event + non-function cb → event-name error wins
         expect(() => api.foo.on('undeclared', 'not-a-fn'))
             .toThrow(/not registered/);
+    });
+});
+
+describe('top-level subscribe/unsubscribe/once syntactic sugar', () => {
+    it('exposes subscribe/unsubscribe/once as top-level functions', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(typeof api.subscribe).toBe('function');
+        expect(typeof api.unsubscribe).toBe('function');
+        expect(typeof api.once).toBe('function');
+    });
+
+    it('subscribe dispatches to [ns].on with fullEventName split on first dot', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        const cb = vi.fn();
+        const off = api.subscribe('foo.evA', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        expect(cb).toHaveBeenCalledWith({ v: 1 });
+
+        off();
+        dispatcher({}, 'foo.evA', [{ v: 2 }]);
+        expect(cb).toHaveBeenCalledTimes(1);
+    });
+
+    it('subscribe + [ns].on share the same listener store (cross-detach)', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        const cb = vi.fn();
+        api.subscribe('foo.evA', cb);
+        // [ns].off should tear down the subscription registered via top-level
+        api.foo.off('evA', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        expect(cb).not.toHaveBeenCalled();
+    });
+
+    it('unsubscribe(fullName, cb) removes only that callback', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        const a = vi.fn();
+        const b = vi.fn();
+        api.subscribe('foo.evA', a);
+        api.subscribe('foo.evA', b);
+        api.unsubscribe('foo.evA', a);
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        expect(a).not.toHaveBeenCalled();
+        expect(b).toHaveBeenCalledWith({ v: 1 });
+    });
+
+    it('unsubscribe(fullName) clears all subscriptions for that event', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        const a = vi.fn();
+        const b = vi.fn();
+        api.subscribe('foo.evA', a);
+        api.subscribe('foo.evA', b);
+        api.unsubscribe('foo.evA');
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ v: 1 }]);
+        expect(a).not.toHaveBeenCalled();
+        expect(b).not.toHaveBeenCalled();
+    });
+
+    it('once fires exactly one time via top-level', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        const cb = vi.fn();
+        api.once('foo.evA', cb);
+
+        const dispatcher = ipcRenderer.__handlers.get('notice:event');
+        dispatcher({}, 'foo.evA', [{ n: 1 }]);
+        dispatcher({}, 'foo.evA', [{ n: 2 }]);
+        expect(cb).toHaveBeenCalledTimes(1);
+        expect(cb).toHaveBeenCalledWith({ n: 1 });
+    });
+
+    it('malformed fullEventName throws (missing dot, empty, non-string)', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.subscribe('nodot', () => {})).toThrow(/malformed/);
+        expect(() => api.subscribe('.evA', () => {})).toThrow(/malformed/);
+        expect(() => api.subscribe('foo.', () => {})).toThrow(/malformed/);
+        expect(() => api.subscribe(123, () => {})).toThrow(/must be a string/);
+    });
+
+    it('unknown namespace throws with clear message', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.subscribe('bar.evA', () => {}))
+            .toThrow(/namespace "bar" not registered/);
+        expect(() => api.unsubscribe('bar.evA'))
+            .toThrow(/namespace "bar" not registered/);
+        expect(() => api.once('bar.evA', () => {}))
+            .toThrow(/namespace "bar" not registered/);
+    });
+
+    it('undeclared event under known namespace throws via [ns].on assertion', () => {
+        const api = build([{ namespace: 'foo', events: ['evA'] }]);
+        expect(() => api.subscribe('foo.evX', () => {}))
+            .toThrow(/Notice event "foo\.evX" not registered/);
+    });
+
+    it('namespace colliding with reserved top-level key throws during build', () => {
+        ipcRenderer.sendSync.mockReturnValue(okEnvelope([
+            { namespace: 'subscribe', events: ['evA'] },
+        ]));
+        expect(() => loadBuilder()()).toThrow(/collides with top-level API/);
     });
 });

@@ -50,6 +50,7 @@ Notice.init({ userSchemas: [fooNotice /* , ... */] });
 
 - schema 只声明事件名（数组形态），不附带任何 per-event 元数据
 - 事件名与 namespace 均须为合法 JS 标识符 `/^[A-Za-z_][A-Za-z0-9_]*$/`（详见架构 §3.7 / §7.4），由 `validateNoticeSchema` 承担运行时校验（详见架构 §7.5）。事件名不含点号，避免与 fullEventName 分隔符冲突。
+- **namespace 不得为顶层保留字** `subscribe` / `unsubscribe` / `once`——这三个名字预留给渲染端 `appNotice` 顶层语法糖（详见 §2.4），冲突时 `init` 抛错
 - 同一 namespace 在所有挂载的 Notice schema 中全局唯一，冲突时 `init` 抛错
 
 ### 2.2 主端：推送事件
@@ -114,6 +115,30 @@ window.appNotice.foo.off();                       // 清空该 namespace 全部�
 - `eventName` 必须是该 namespace 在 schema 中声明过的事件名，否则 `on/once/off(eventName, ...)` 抛错（`off()` 无参例外，不校验）
 - `on/once` 的 `cb` 必须是函数，`off(eventName, cb)` 若显式传入 `cb` 也须是函数，否则抛错
 - 订阅状态只存在于当前 renderer 进程内存，**窗口关闭时随进程退出自动释放**
+
+`appNotice` 顶层同时暴露三个 fullEventName 版语法糖（EventEmitter 风格），与 `[ns].on/off/once` 共享同一订阅存储、任选一路均可：
+
+```js
+// fullEventName 形态 = "ns.event"，与主端 broadcast/direct 使用的一致
+const off = window.appNotice.subscribe('foo.userLoggedIn', data => { /* ... */ });
+off();
+
+// 精确解绑（cb 必须与订阅时同引用）
+window.appNotice.unsubscribe('foo.userLoggedIn', cb);
+// 清空该事件全部订阅
+window.appNotice.unsubscribe('foo.userLoggedIn');
+
+// 一次性订阅
+window.appNotice.once('foo.dataReady', data => { /* ... */ });
+```
+
+**约定**：
+
+- `subscribe/once` 内部委托到 `appNotice[ns].on/once(eventName, cb)`，返回取消函数
+- `unsubscribe(fullEventName, cb?)` 内部委托到 `appNotice[ns].off(eventName, cb)`（`cb` 省略即清空该事件全部订阅）；**不支持无参 `unsubscribe()`**——顶层"清空所有 namespace"过于危险，需要清空整个 namespace 请调 `appNotice[ns].off()`
+- `fullEventName` 须为字符串且形如 `"ns.event"`（按第一个 `.` 拆分），否则抛错
+- namespace 未在任何 schema 中声明 → 抛错 `Notice {api}: namespace "ns" not registered`
+- eventName 未声明 / cb 非函数 → 委托到 `[ns]` 层抛与直调等价的错
 
 ### 2.5 关停
 
@@ -269,6 +294,8 @@ module.exports = function buildAppNotice() { /* returns appNotice */ };
 preload 端 envelope 解包契约详见架构 §7.1；错误还原 `reviveError` 详见架构 §7.3。
 
 ```js
+const TOP_LEVEL_KEYS = new Set(['subscribe', 'unsubscribe', 'once']);
+
 function buildAppNotice() {
     const envelope = ipcRenderer.sendSync(META_GET_SCHEMA_CHANNEL);
     if (!envelope || !envelope.ok) throw reviveError(envelope && envelope.error);
@@ -279,9 +306,32 @@ function buildAppNotice() {
 
     const appNotice = {};
     for (const { namespace, events } of schemaList) {
+        if (TOP_LEVEL_KEYS.has(namespace)) {
+            throw new Error(`Notice namespace "${namespace}" collides with top-level API`);
+        }
         const eventSet = new Set(events);   // 声明索引，供 on/once/off 做 O(1) 严格校验
         appNotice[namespace] = buildNamespaceApi(namespace, eventSet, listeners);
     }
+
+    // 顶层语法糖：subscribe/unsubscribe/once 拆 fullEventName 委托到 [ns] 层
+    const resolveNsApi = (fullEventName, api) => {
+        const { namespace, eventName } = parseFullEventName(fullEventName);
+        const nsApi = appNotice[namespace];
+        if (!nsApi) throw new Error(`Notice ${api}: namespace "${namespace}" not registered`);
+        return { nsApi, eventName };
+    };
+    appNotice.subscribe   = (fullEvent, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEvent, 'subscribe');
+        return nsApi.on(eventName, cb);
+    };
+    appNotice.unsubscribe = (fullEvent, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEvent, 'unsubscribe');
+        nsApi.off(eventName, cb);
+    };
+    appNotice.once        = (fullEvent, cb) => {
+        const { nsApi, eventName } = resolveNsApi(fullEvent, 'once');
+        return nsApi.once(eventName, cb);
+    };
 
     // 单一 dispatcher：从 fullEventName 解析出 namespace / eventName，展开 args 数组
     ipcRenderer.on(EVENT_CHANNEL, (_event, fullEventName, args) => {
@@ -412,6 +462,7 @@ preload  ipcRenderer.on('notice:event', dispatcher)
 | 用户主端 → M3 | `Notice.cleanup()` | 关停清理 |
 | 用户 preload → 聚合入口 | `require('@base-client/toolkit/preload').init()` | 间接装配 appNotice |
 | 用户渲染端 ← M3（间接） | `window.appNotice.{namespace}.on(eventName, cb)` / `.once(eventName, cb)` / `.off(eventName?, cb?)` | 由聚合入口经 contextBridge 暴露；namespace 级 API，事件名作首参 |
+| 用户渲染端 ← M3（间接） | `window.appNotice.subscribe(fullEventName, cb)` / `.unsubscribe(fullEventName, cb?)` / `.once(fullEventName, cb)` | 顶层语法糖：EventEmitter 风格，接受 `"ns.event"` 全名，内部委托到 `[ns]` 层 |
 | M3 preload → 聚合入口 | `module.exports = buildAppNotice` | 由 `src/preload.js` require 后 contextBridge |
 
 ### 6.2 对内依赖
@@ -462,7 +513,9 @@ src/notice/
 
 - 导出 `buildAppNotice()` 工厂
 - 内部 `buildNamespaceApi(namespace, eventSet, listeners)` —— namespace 级 on/once/off 工厂，含 assertEvent / assertFn 严格校验
-- 内部状态 `listeners: Map<namespace, Map<eventName, Set<cb>>>`（两级 Map）
+- 内部 `parseFullEventName(fullEventName)` —— 按第一个 `.` 拆 `{namespace, eventName}`，供顶层 subscribe/unsubscribe/once 语法糖复用
+- 顶层 `subscribe(fullEvent, cb)` / `unsubscribe(fullEvent, cb?)` / `once(fullEvent, cb)` 三个语法糖挂在 `appNotice` 根上，委托到对应 `[ns]` 层；namespace 命名冲突（撞保留字 subscribe/unsubscribe/once）时构建抛错
+- 内部状态 `listeners: Map<namespace, Map<eventName, Set<cb>>>`（两级 Map），顶层与 `[ns]` 层共享
 - 单一 `ipcRenderer.on('notice:event', dispatcher)` 派发：解析 fullEventName、按 `[...cbs]` snapshot 迭代、`cb(...args)` 展开
 - **不**自动 init、**不**调用 `contextBridge`——由聚合入口 `src/preload.js` 装配
 

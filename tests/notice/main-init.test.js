@@ -111,6 +111,14 @@ describe('init: schema validation', () => {
             ],
         })).toThrow(/conflict|冲突/i);
     });
+    it.each(['subscribe', 'unsubscribe', 'once'])(
+        'namespace "%s" collides with reserved top-level API',
+        name => {
+            expect(() => Notice.init({
+                userSchemas: [{ namespace: name, events: ['x'] }],
+            })).toThrow(/collides with top-level API/);
+        },
+    );
 });
 
 describe('init: meta channel registration', () => {

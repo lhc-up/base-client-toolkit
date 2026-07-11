@@ -79,6 +79,12 @@ function buildSyncCaller(ns, name) {
  *
  * 返回形态：{ [namespace]: { [handler](...args): Promise<any>, [handler]Sync(...args): any } }
  *
+ * **sync 语义澄清**：schema 里 `sync: ['foo']` 是**新增别名**，不是替换。
+ * 即使 `foo` 在 sync 列表里，`appService[ns].foo(...)` 仍返回 Promise；
+ * 要拿同步返回值必须调 `appService[ns].fooSync(...)`。
+ * 若渲染端把 `.foo()` 的 Promise 直接赋给 template 会渲染成 `[object Promise]`，
+ * 且无 runtime 报错——常见踩点，切勿混淆。
+ *
  * 详见架构 §3.5（preload 一次性 init 与 opt-out 契约）。
  *
  * @returns {Object} appService

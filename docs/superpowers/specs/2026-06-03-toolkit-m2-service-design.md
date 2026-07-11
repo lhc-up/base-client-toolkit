@@ -56,6 +56,7 @@ Service.init({ userSchemas: [fooSchema /* , ... */] });
 - 默认情况下 handler 签名仅为 `(...callerArgs)`——Service 调用时不注入任何 IPC 参数，**rest-params 安全可用**（如 `log(...messages)`）。
 - handler 名位列 schema 的 `needsEvent` 列表时，Service 调用形态变为 `handler(...callerArgs, event)`——`event` 是 Electron 的 `IpcMainInvokeEvent`，位于参数末位。
 - handler 名位列 `sync` 列表时**可以是同步或异步函数**——Service 会 `await` 异步 handler 再写 `returnValue`。但 **sync 通道会阻塞渲染进程直到响应返回**，handler 若 `await` 长耗时操作，渲染端会冻结相应时长。仅在能保证快速返回的场景使用 sync 通道。
+- **`sync` 声明的语义是"新增 `${name}Sync` 别名"，不是"替换原方法为同步"**——`foo` 出现在 handlers 里就恒有 async 通道（`appService[ns].foo(...)` 返 Promise），出现在 `sync` 里额外多一条 sync 通道（`appService[ns].fooSync(...)` 同步返回）。两条通道并存。若渲染端误把 `.foo()` 的 Promise 赋给 template 会渲染成 `[object Promise]`，且无 runtime 报错——需明确调 `.fooSync()` 拿同步值。
 - **`rest-params` + `needsEvent`** 同用为**未支持组合**（event 会卷入 rest 中），需要 event 的 handler 应使用具名参数。
 - 同一 namespace 在所有挂载的 Service schema 中全局唯一，冲突时 `init` 抛错。命名口径与 handler 名字符规则详见架构 §3.7 / §7.4（namespace / handler 名 / event 名统一须为合法 JS 标识符 `/^[A-Za-z_][A-Za-z0-9_]*$/`；由 `validateServiceSchema` 承担运行时校验，详见架构 §7.5）。
 
@@ -87,8 +88,8 @@ try {
 
 **约定**：
 
-- 异步通道 → 渲染端 `appService[ns][name](...)` 返回 Promise。
-- 同步通道 → 渲染端 `appService[ns][nameSync](...)` 直接返回值（阻塞渲染进程，仅在不可异步场景使用）。
+- 异步通道 → 渲染端 `appService[ns][name](...)` 返回 Promise。**恒存在**——只要 handler 在 schema `handlers` 里就有 async 通道。
+- 同步通道 → 渲染端 `appService[ns][nameSync](...)` 直接返回值（阻塞渲染进程，仅在不可异步场景使用）。**仅在 handler 名位列 schema `sync` 时额外生成的别名**，不替换原方法（详见 2.1 约定）。
 - 主端错误经统一信封传到渲染端，由 `reviveError` 还原成 Error 实例后 throw。
 - 渲染端传入的所有参数会经 `serialize` 编码后再过 IPC，业务侧无需关心可克隆性。
 
