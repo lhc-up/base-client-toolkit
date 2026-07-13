@@ -28,6 +28,10 @@ app.on('will-quit', function () {
     globalShortcut.unregisterAll();
 });
 
-module.exports = function init() {
-    registerDevToolsShortcut();
+/**
+ * @param {{ devToolsKey?: string }} [opts]
+ */
+module.exports = function init(opts = {}) {
+    const keys = opts?.devToolsKey ?? 'Command+Control+Alt+F6';
+    registerDevToolsShortcut(keys);
 };

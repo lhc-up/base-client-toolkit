@@ -10,6 +10,7 @@
         "./service/preload": "./src/service/preload.js",
         "./notice": "./src/notice/main.js",
         "./notice/preload": "./src/notice/preload.js",
+        "./capability": "./src/capability/index.js",
         "./capability/*": "./src/capability/*/index.js",
         "./enhance/*": "./src/enhance/*.js"
     },
