@@ -345,6 +345,14 @@ serialize({ a: shared, b: shared })
 - JSON-safety 兜底：包含各种"以前会崩"字段的对象经 serialize 后 `JSON.stringify` 不抛
 - 共享 leaf 引用：同一 Date / Error / RegExp / Buffer 在多个字段中应各自序列化，不被误标为 Circular；同一 plain object 在多个字段中第二次仍被标为 Circular（pinned）
 
+#### `real-world.test.js`（真实复杂值组合）
+
+- 文件路径、超长字符串与深层业务对象组合后仍可 `JSON.stringify`
+- Buffer、Date、Error/cause、Map、Set、RegExp、TypedArray 按公开转换契约输出
+- function、Symbol、BigInt、Promise、WeakMap 与 class 实例混入同一 payload 时永不使 IPC 编码崩溃
+- 直接循环、间接循环和共享引用输出稳定占位符
+- 不可克隆字段嵌在数组、Map value、Error cause 等真实位置时仍满足 `serializeForIpc` 永不抛错不变量
+
 #### `circular.test.js`（循环引用）
 - 直接自引用：`a.a = a`
 - 间接循环：`a.b = b; b.a = a`

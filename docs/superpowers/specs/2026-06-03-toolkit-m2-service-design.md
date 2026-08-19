@@ -84,6 +84,14 @@ try {
 } catch (err) {
     console.error(err.message, err.stack);
 }
+
+// plain object 参数的顶层 function 字段会转换为临时 callback channel
+await window.appService.foo.download({
+    url: 'https://example.test/file',
+    onProgress(percent) {
+        console.log(percent);
+    },
+});
 ```
 
 **约定**：
@@ -92,6 +100,7 @@ try {
 - 同步通道 → 渲染端 `appService[ns][nameSync](...)` 直接返回值（阻塞渲染进程，仅在不可异步场景使用）。**仅在 handler 名位列 schema `sync` 时额外生成的别名**，不替换原方法（详见 2.1 约定）。
 - 主端错误经统一信封传到渲染端，由 `reviveError` 还原成 Error 实例后 throw。
 - 渲染端传入的所有参数会经 `serialize` 编码后再过 IPC，业务侧无需关心可克隆性。
+- plain object 参数的顶层 function 字段会被替换为临时 channel 字符串；主端 handler 必须位列 `needsEvent`，并调用 `event.sender.send(channel, data)` 触发回调。完整边界见 §5.5。
 
 ### 2.4 关停
 
@@ -252,12 +261,17 @@ function buildAppService() {
 
 ```js
 function buildAsyncCaller(ns, name) {
+    const channel = asyncChannel(ns, name);
     return async (...args) => {
-        const safeArgs = args.map(a => serializeForIpc(a));
-        const envelope = await ipcRenderer.invoke(asyncChannel(ns, name), ...safeArgs);
-        // envelope 形态详见架构 §7.1
-        if (envelope.ok) return envelope.data;
-        throw reviveError(envelope.error);
+        const { mappedArgs, tempChannels } = replaceCallbacksWithChannels(channel, args);
+        const safeArgs = mappedArgs.map(a => serializeForIpc(a));
+        try {
+            const envelope = await ipcRenderer.invoke(channel, ...safeArgs);
+            if (envelope.ok) return envelope.data;
+            throw reviveError(envelope.error);
+        } finally {
+            for (const c of tempChannels) ipcRenderer.removeAllListeners(c);
+        }
     };
 }
 ```
@@ -266,17 +280,34 @@ function buildAsyncCaller(ns, name) {
 
 ```js
 function buildSyncCaller(ns, name) {
+    const channel = syncChannel(ns, name);
     return (...args) => {
-        const safeArgs = args.map(a => serializeForIpc(a));
-        const envelope = ipcRenderer.sendSync(syncChannel(ns, name), ...safeArgs);
-        // envelope 形态详见架构 §7.1
-        if (envelope.ok) return envelope.data;
-        throw reviveError(envelope.error);
+        const { mappedArgs, tempChannels } = replaceCallbacksWithChannels(channel, args);
+        const safeArgs = mappedArgs.map(a => serializeForIpc(a));
+        try {
+            const envelope = ipcRenderer.sendSync(channel, ...safeArgs);
+            if (envelope.ok) return envelope.data;
+            throw reviveError(envelope.error);
+        } finally {
+            for (const c of tempChannels) ipcRenderer.removeAllListeners(c);
+        }
     };
 }
 ```
 
-### 5.5 渲染端参数序列化
+### 5.5 callback channel
+
+`replaceCallbacksWithChannels(baseChannel, args)` 在参数序列化之前运行，契约如下：
+
+- 只处理 **plain object 参数自身、可枚举、顶层**的 function 字段；独立 function 参数、嵌套 function、数组和 class 实例不转换，按 M1 serializer 规则处理。
+- 每个 function 字段生成独立临时 channel，并用 channel 字符串替换克隆对象中的原字段；调用方传入的原对象不被修改。
+- 主端 handler 需在 schema 的 `needsEvent` 中声明，通过末参 `event` 执行 `event.sender.send(callbackChannel, data)`；每次回调传递一个 data 参数。
+- async/sync caller 都在调用完成或失败后的 `finally` 中 `removeAllListeners`。持续进度回调应使用 async caller；handler 完成后临时 channel 即失效。
+- callback channel 是 M2 内部传输细节，业务不得缓存、拼接或跨调用复用。
+
+回归测试归 M2 所有：`tests/service/preload-callback-channel.test.js` 覆盖生成、触发、清理、多回调、原对象不变、sync/async 与不支持形态。
+
+### 5.6 渲染端参数序列化
 
 渲染端参数在 IPC 之前经 `serializeForIpc()` 编码，与主端 handler 返回值的序列化共同构成 IPC 安全闭环（详见架构 §7.2）。
 
@@ -301,7 +332,7 @@ function buildSyncCaller(ns, name) {
 | M2 主/preload → shared/envelope | `okEnvelope` / `errorEnvelope` | 统一信封构造（详见架构 §7.1） |
 | M2 主/preload → shared/naming | `isValidIdentifier` | 命名合法性校验（详见架构 §7.4） |
 | M2 主端 → electron | `ipcMain.handle/on/removeHandler/removeAllListeners` | 通道注册与清理 |
-| M2 preload → electron | `ipcRenderer.invoke/sendSync` | IPC 调用 |
+| M2 preload → electron | `ipcRenderer.invoke/sendSync/on/removeAllListeners` | IPC 调用与临时 callback channel 生命周期 |
 
 ### 6.3 M2 不负责
 

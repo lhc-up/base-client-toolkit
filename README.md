@@ -10,12 +10,12 @@
 | Notice | `require('@base-client/toolkit').Notice` | 通知主端 |
 | BaseWindow | `require('@base-client/toolkit').BaseWindow` | 窗口增强 |
 | shared | `require('@base-client/toolkit').shared` | 共享工具 |
-| logger | `require('@base-client/toolkit').logger` | 日志（T-01） |
-| os | `require('@base-client/toolkit').os` | 系统能力（T-05） |
-| shortcut | `require('@base-client/toolkit').shortcut` | 全局热键（T-03） |
-| singleInstance | `require('@base-client/toolkit').singleInstance` | 单实例（T-04） |
-| store | `require('@base-client/toolkit').store` | 持久存储（T-07） |
-| update | `require('@base-client/toolkit').update` | 自动更新（T-08） |
+| logger | `require('@base-client/toolkit/capability').logger` | 日志 |
+| os | `require('@base-client/toolkit/capability').os` | 系统能力 |
+| shortcut | `require('@base-client/toolkit/capability').shortcut` | 全局热键 |
+| singleInstance | `require('@base-client/toolkit/capability').singleInstance` | 单实例 |
+| store | `require('@base-client/toolkit/capability').store` | 持久存储 |
+| update | `require('@base-client/toolkit/capability').update` | 自动更新 |
 
 也可直接通过子路径精确引入各模块（如 `require('@base-client/toolkit/capability/logger')`）。
 
@@ -39,16 +39,16 @@ npm install log4js electron-store semver download @vscode/sudo-prompt
 
 ## 热键配置（shortcut）
 
-`shortcut.init()` 支持按需传入配置对象：
+`shortcut()` 支持按需传入配置对象：
 
 ```js
-const shortcut = require('@base-client/toolkit').shortcut;
+const { shortcut } = require('@base-client/toolkit/capability');
 
 // 默认 F6（Command+Control+Alt+F6）
-shortcut.init();
+shortcut();
 
 // 兼容业务历史习惯，指定 F5
-shortcut.init({ devToolsKey: 'Command+Control+Alt+F5' });
+shortcut({ devToolsKey: 'Command+Control+Alt+F5' });
 ```
 
 ## 版本
