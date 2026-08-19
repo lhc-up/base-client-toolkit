@@ -14,7 +14,6 @@ const path = require('path');
 const fse = require('fs-extra');
 const semver = require('semver');
 const download = require('download');
-const sudo = require('@vscode/sudo-prompt');
 const { randomUUID } = require('crypto');
 const { exec } = require('child_process');
 const { app, dialog, shell } = require('electron');
@@ -120,6 +119,7 @@ function installByXdgOpen(filePath) {
 // 使用 dpkg 命令静默安装，需要 root 权限
 function installByDpkg(filePath) {
     return new Promise(resolve => {
+        const sudo = require('@vscode/sudo-prompt');
         const options = {
             name: 'install',
         };

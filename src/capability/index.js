@@ -5,21 +5,22 @@
  *   1. 统一入口：require('@base-client/toolkit/capability')
  *   2. 精确子路径：require('@base-client/toolkit/capability/logger')
  *
- * 新增 capability 时只需在此文件添加一行 require，无需改动根入口。
+ * 新增 capability 时只需在 capabilityNames 中登记，无需改动根入口。
+ * getter 保持子模块懒加载，未使用 capability 的 optional peer 不会阻塞聚合入口。
  */
 
-const logger = require('./logger');
-const os = require('./os');
-const shortcut = require('./shortcut');
-const singleInstance = require('./singleInstance');
-const store = require('./store');
-const update = require('./update');
+const capabilityNames = [
+    'logger',
+    'os',
+    'shortcut',
+    'singleInstance',
+    'store',
+    'update',
+];
 
-module.exports = {
-    logger,
-    os,
-    shortcut,
-    singleInstance,
-    store,
-    update,
-};
+module.exports = Object.defineProperties({}, Object.fromEntries(
+    capabilityNames.map(name => [name, {
+        enumerable: true,
+        get: () => require(`./${name}`),
+    }]),
+));

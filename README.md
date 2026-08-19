@@ -35,7 +35,7 @@
 npm install log4js electron-store semver download @vscode/sudo-prompt
 ```
 
-以上均为 optional peer dependency，绿地项目无安装链时首次接入会 missing，需手动安装一次。
+以上均为 optional peer dependency，按实际使用的 capability 安装即可。聚合入口会延迟加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 的提权安装回退路径实际执行时加载。
 
 ## 热键配置（shortcut）
 
