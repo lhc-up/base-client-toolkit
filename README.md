@@ -39,7 +39,9 @@ npm install log4js electron-store semver download @vscode/sudo-prompt
 
 update 的 `installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。
 
-toolkit 只提供下载、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径直接交给这些 API。
+业务主进程已经取得本地增量包时，可调用 `stageLocalPkg({ sourcePath, integrity })`。该方法只接受绝对 `.asax` 路径和必填 SHA-256，先复制到 `updatePackage` 内的随机临时文件，校验成功后再替换为同名 `.asar`；失败只清理临时文件，不删除来源文件，也不会在校验前覆盖已有包。
+
+toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 package/installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径直接交给这些 API。
 
 ## 热键配置（shortcut）
 

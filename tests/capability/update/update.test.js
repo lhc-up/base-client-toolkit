@@ -17,8 +17,19 @@ function createHarness(platform = 'win32', overrides = {}) {
             existsSync: file => files.has(file),
             readJSONSync: file => files.get(file),
             readFileSync: file => files.get(file),
-            renameSync: (from, to) => calls.push(['rename', from, to]),
-            removeSync: file => calls.push(['remove', file]),
+            copyFileSync: (from, to) => {
+                calls.push(['copy', from, to]);
+                files.set(to, files.get(from));
+            },
+            renameSync: (from, to) => {
+                calls.push(['rename', from, to]);
+                files.set(to, files.get(from));
+                files.delete(from);
+            },
+            removeSync: file => {
+                calls.push(['remove', file]);
+                files.delete(file);
+            },
         },
         semver: require('semver'),
         download: async (url, dir, options) => {
@@ -140,6 +151,64 @@ describe('capability/update package storage', () => {
             url: 'https://example.test/b.asax',
             integrity: '0'.repeat(64),
         })).rejects.toThrow(/integrity/);
+        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
+    });
+
+    it('stages a trusted local .asax through a verified temporary file', async () => {
+        const { calls, files, update } = createHarness();
+        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asax';
+        const payload = Buffer.from('local update');
+        const integrity = createHash('sha256').update(payload).digest('hex');
+        files.set(sourcePath, payload);
+
+        await expect(update.stageLocalPkg({ sourcePath, integrity }))
+            .resolves.toBe(nodePath.join('/updates', 'prod-v1.2.0.asar'));
+        expect(calls).toContainEqual(['copy', sourcePath, nodePath.join('/updates', 'temp-id')]);
+        expect(calls).toContainEqual([
+            'rename',
+            nodePath.join('/updates', 'temp-id'),
+            nodePath.join('/updates', 'prod-v1.2.0.asar'),
+        ]);
+        expect(files.get(sourcePath)).toBe(payload);
+    });
+
+    it('rejects relative and non-asax local package paths before copying', async () => {
+        const { calls, update } = createHarness();
+        await expect(update.stageLocalPkg({ sourcePath: 'relative.asax', integrity: '0'.repeat(64) }))
+            .rejects.toThrow(/absolute/);
+        await expect(update.stageLocalPkg({ sourcePath: 'C:\\incoming\\payload.zip', integrity: '0'.repeat(64) }))
+            .rejects.toThrow(/\.asax/);
+        expect(calls.some(call => call[0] === 'copy')).toBe(false);
+    });
+
+    it('keeps an existing final package when staged content fails integrity', async () => {
+        const { calls, files, update } = createHarness();
+        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asax';
+        const finalPath = nodePath.join('/updates', 'prod-v1.2.0.asar');
+        files.set(sourcePath, Buffer.from('corrupt'));
+        files.set(finalPath, Buffer.from('known good'));
+
+        await expect(update.stageLocalPkg({ sourcePath, integrity: '0'.repeat(64) }))
+            .rejects.toThrow(/integrity/);
+        expect(files.get(finalPath).toString()).toBe('known good');
+        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
+        expect(calls).not.toContainEqual(['remove', finalPath]);
+    });
+
+    it('cleans the temporary file when copying a local package fails', async () => {
+        const failure = new Error('copy failed');
+        const copyFileSync = vi.fn(() => { throw failure; });
+        const { calls, update } = createHarness('win32', {
+            fse: {
+                ensureDirSync: dir => calls.push(['ensureDir', dir]),
+                copyFileSync,
+                removeSync: file => calls.push(['remove', file]),
+            },
+        });
+        await expect(update.stageLocalPkg({
+            sourcePath: 'C:\\incoming\\prod-v1.2.0.asax',
+            integrity: '0'.repeat(64),
+        })).rejects.toBe(failure);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 });

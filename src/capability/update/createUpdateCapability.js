@@ -49,6 +49,38 @@ function createUpdateCapability(deps) {
         return newestLocalPkg;
     }
 
+    function normalizeIntegrity(integrity, { required = false } = {}) {
+        if (integrity === undefined && !required) return null;
+        const expected = String(integrity || '').replace(/^sha256-/i, '').toLowerCase();
+        if (!/^[a-f0-9]{64}$/.test(expected)) {
+            throw new TypeError('update package integrity must be a SHA-256 hex digest');
+        }
+        return expected;
+    }
+
+    function verifyIntegrity(filePath, integrity, options) {
+        const expected = normalizeIntegrity(integrity, options);
+        if (!expected) return;
+        const actual = createHash('sha256')
+            .update(fse.readFileSync(filePath))
+            .digest('hex');
+        if (actual !== expected) throw new Error('update package integrity check failed');
+    }
+
+    function getPackagePaths(sourceName) {
+        fse.ensureDirSync(updatePackageDir);
+        const tempPath = path.join(updatePackageDir, randomUUID());
+        const finalName = sourceName.replace(/\.asax$/i, '.asar');
+        return { tempPath, finalPath: path.join(updatePackageDir, finalName) };
+    }
+
+    function promoteTempPackage({ tempPath, finalPath, integrity, integrityRequired = false }) {
+        verifyIntegrity(tempPath, integrity, { required: integrityRequired });
+        if (fse.existsSync(finalPath)) fse.removeSync(finalPath);
+        fse.renameSync(tempPath, finalPath);
+        return finalPath;
+    }
+
     async function downloadPkg(option = {}) {
         const { url, integrity } = option;
         if (typeof url !== 'string' || !url) {
@@ -65,27 +97,36 @@ function createUpdateCapability(deps) {
             throw new Error(`update.downloadPkg 只接受 .asax 增量包：${sourceName}`);
         }
 
-        fse.ensureDirSync(updatePackageDir);
-        const tempName = randomUUID();
-        const tempPath = path.join(updatePackageDir, tempName);
-        const finalName = sourceName.replace(/\.asax$/i, '.asar');
-        const finalPath = path.join(updatePackageDir, finalName);
+        const { tempPath, finalPath } = getPackagePaths(sourceName);
 
         try {
-            await download(url, updatePackageDir, { filename: tempName });
-            if (integrity !== undefined) {
-                const expected = String(integrity).replace(/^sha256-/i, '').toLowerCase();
-                if (!/^[a-f0-9]{64}$/.test(expected)) {
-                    throw new TypeError('update.downloadPkg integrity must be a SHA-256 hex digest');
-                }
-                const actual = createHash('sha256')
-                    .update(fse.readFileSync(tempPath))
-                    .digest('hex');
-                if (actual !== expected) throw new Error('update package integrity check failed');
-            }
-            if (fse.existsSync(finalPath)) fse.removeSync(finalPath);
-            fse.renameSync(tempPath, finalPath);
-            return finalPath;
+            await download(url, updatePackageDir, { filename: path.basename(tempPath) });
+            return promoteTempPackage({ tempPath, finalPath, integrity });
+        } catch (err) {
+            try { fse.removeSync(tempPath); } catch { /* best effort */ }
+            logger.error(err);
+            throw err;
+        }
+    }
+
+    async function stageLocalPkg({ sourcePath, integrity } = {}) {
+        if (typeof sourcePath !== 'string' || !path.isAbsolute(sourcePath)) {
+            throw new TypeError('update.stageLocalPkg sourcePath must be absolute');
+        }
+        const sourceName = path.basename(sourcePath);
+        if (!/\.asax$/i.test(sourceName)) {
+            throw new Error(`update.stageLocalPkg only accepts .asax packages: ${sourceName}`);
+        }
+
+        const { tempPath, finalPath } = getPackagePaths(sourceName);
+        try {
+            fse.copyFileSync(sourcePath, tempPath);
+            return promoteTempPackage({
+                tempPath,
+                finalPath,
+                integrity,
+                integrityRequired: true,
+            });
         } catch (err) {
             try { fse.removeSync(tempPath); } catch { /* best effort */ }
             logger.error(err);
@@ -180,7 +221,7 @@ function createUpdateCapability(deps) {
         return { started: false, reason: 'unsupported-platform' };
     }
 
-    return { getUpdatePkgList, getNewestPkg, downloadPkg, installApp, quitApp };
+    return { getUpdatePkgList, getNewestPkg, downloadPkg, stageLocalPkg, installApp, quitApp };
 }
 
 module.exports = { createUpdateCapability };

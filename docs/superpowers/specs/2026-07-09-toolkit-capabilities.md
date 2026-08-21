@@ -219,6 +219,12 @@ const newest = update.getNewestPkg(corePkg);
 // 下载增量包（URL pathname 必须以 .asax 结尾；自动创建目录，落盘后改名 .asar）
 const finalPath = await update.downloadPkg({ url, integrity: 'sha256-<64 hex chars>' });
 
+// 业务主进程已获得本地 .asax 时，复制、校验并晋升到 updatePackage
+const stagedPath = await update.stageLocalPkg({
+    sourcePath: 'C:\\trusted-transfer\\prod-v1.2.0.asax',
+    integrity: '<64 hex chars>',
+});
+
 // 多平台安装：Windows/macOS shell.openPath；Linux xterm / xdg-open / dpkg
 const result = await update.installApp(filePath);
 // { started: true }
@@ -230,7 +236,7 @@ update.quitApp();
 
 `corePkg` 形态：`{ name: string, version: string, ... }`。业务侧传入自己的 core 版本（例如从 `pkgJson` 读取）。
 
-`getUpdatePkgList()` 在扫描前确保 `updatePackage` 目录存在，并忽略无法读取或不匹配 `corePkg.name` 的条目。`downloadPkg()` 使用 URL pathname 推导文件名，查询参数不会进入落盘路径；可选 `integrity` 在临时文件晋升前做 SHA-256 校验，失败时清理随机临时文件。`installApp()` 要求绝对路径和平台匹配扩展名，并对未知平台明确返回 `unsupported-platform`，不把“未执行任何安装动作”视为成功。可信 URL、manifest/action 授权和安装包来源仍由业务主进程负责，renderer 输入不得直接透传。
+`getUpdatePkgList()` 在扫描前确保 `updatePackage` 目录存在，并忽略无法读取或不匹配 `corePkg.name` 的条目。`downloadPkg()` 使用 URL pathname 推导文件名，查询参数不会进入落盘路径；可选 `integrity` 在临时文件晋升前做 SHA-256 校验，失败时清理随机临时文件。`stageLocalPkg()` 要求绝对 `.asax` 路径和必填 SHA-256，复制到同一目录的随机临时文件并校验后才晋升为 `.asar`，不会删除来源文件。`installApp()` 要求绝对路径和平台匹配扩展名，并对未知平台明确返回 `unsupported-platform`，不把“未执行任何安装动作”视为成功。可信 URL、manifest/action 授权和安装包来源仍由业务主进程负责，renderer 输入不得直接透传。
 
 ## §5 使用示例
 
