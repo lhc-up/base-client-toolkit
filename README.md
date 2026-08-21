@@ -37,6 +37,8 @@ npm install log4js electron-store semver download @vscode/sudo-prompt
 
 以上均为 optional peer dependency，按实际使用的 capability 安装即可。聚合入口会延迟加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 的提权安装回退路径实际执行时加载。
 
+update 的 `installApp(filePath)` 在 Windows/macOS 通过 Electron `shell.openPath` 启动安装器，Linux 使用 xdg-open/dpkg/Loongnix 回退链；返回 `{ started, reason? }`，未知平台明确返回 `unsupported-platform`。增量下载只接受 pathname 以 `.asax` 结尾的 URL，落盘后改名为 `.asar`。
+
 ## 热键配置（shortcut）
 
 `shortcut()` 支持按需传入配置对象：

@@ -216,17 +216,21 @@ const list = update.getUpdatePkgList(corePkg);
 const newest = update.getNewestPkg(corePkg);
 // { name, version, type: 'core' | 'update', path?, ... }
 
-// 下载增量包（.asax → 落盘后自动改名 .asar）
+// 下载增量包（URL pathname 必须以 .asax 结尾；自动创建目录，落盘后改名 .asar）
 const finalPath = await update.downloadPkg({ url });
 
-// 多平台安装（Linux xterm / xdg-open / dpkg，龙芯特化走 xterm；Windows shell.openPath）
-await update.installApp(filePath);
+// 多平台安装：Windows/macOS shell.openPath；Linux xterm / xdg-open / dpkg
+const result = await update.installApp(filePath);
+// { started: true }
+// { started: false, reason: 'open-failed' | 'unsupported-platform', message? }
 
 // 主动退出（logger.shutdown 后延时 500ms 调 app.exit(1)）
 update.quitApp();
 ```
 
 `corePkg` 形态：`{ name: string, version: string, ... }`。业务侧传入自己的 core 版本（例如从 `pkgJson` 读取）。
+
+`getUpdatePkgList()` 在扫描前确保 `updatePackage` 目录存在，并忽略无法读取或不匹配 `corePkg.name` 的条目。`downloadPkg()` 使用 URL pathname 推导文件名，查询参数不会进入落盘路径；失败时清理随机临时文件。`installApp()` 对未知平台明确返回 `unsupported-platform`，不把“未执行任何安装动作”视为成功。
 
 ## §5 使用示例
 
