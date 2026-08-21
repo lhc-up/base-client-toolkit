@@ -16,6 +16,7 @@ const { app, dialog, shell } = require('electron');
 const logger = require('../logger');
 const os = require('../os');
 const { getFilePathConfig } = require('../../paths');
+const { loadOptionalPeer } = require('../../shared/loadOptionalPeer');
 const { createUpdateCapability } = require('./createUpdateCapability');
 
 module.exports = createUpdateCapability({
@@ -31,6 +32,6 @@ module.exports = createUpdateCapability({
     logger,
     os,
     filePathConfig: getFilePathConfig(),
-    loadSudoPrompt: () => require('@vscode/sudo-prompt'),
+    loadSudoPrompt: () => loadOptionalPeer('@vscode/sudo-prompt'),
     setTimeout,
 });

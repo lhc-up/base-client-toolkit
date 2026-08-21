@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('capability/update optional peers', () => {
+    it('does not expose sudo-prompt as a static require to webpack', () => {
+        const updatePath = path.resolve(__dirname, '../../../src/capability/update/index.js');
+        const source = fs.readFileSync(updatePath, 'utf8');
+        expect(source).not.toMatch(/require\(['"]@vscode\/sudo-prompt['"]\)/);
+    });
+
     it('loads without sudo-prompt until the privileged installer is used', () => {
         const updatePath = path.resolve(__dirname, '../../../src/capability/update/index.js');
         const script = `
