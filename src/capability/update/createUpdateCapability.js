@@ -5,7 +5,8 @@ function createUpdateCapability(deps) {
         semver,
         download,
         randomUUID,
-        exec,
+        createHash,
+        execFile,
         app,
         dialog,
         shell,
@@ -49,7 +50,7 @@ function createUpdateCapability(deps) {
     }
 
     async function downloadPkg(option = {}) {
-        const { url } = option;
+        const { url, integrity } = option;
         if (typeof url !== 'string' || !url) {
             throw new TypeError('update.downloadPkg url 不能为空');
         }
@@ -72,6 +73,16 @@ function createUpdateCapability(deps) {
 
         try {
             await download(url, updatePackageDir, { filename: tempName });
+            if (integrity !== undefined) {
+                const expected = String(integrity).replace(/^sha256-/i, '').toLowerCase();
+                if (!/^[a-f0-9]{64}$/.test(expected)) {
+                    throw new TypeError('update.downloadPkg integrity must be a SHA-256 hex digest');
+                }
+                const actual = createHash('sha256')
+                    .update(fse.readFileSync(tempPath))
+                    .digest('hex');
+                if (actual !== expected) throw new Error('update package integrity check failed');
+            }
             if (fse.existsSync(finalPath)) fse.removeSync(finalPath);
             fse.renameSync(tempPath, finalPath);
             return finalPath;
@@ -84,22 +95,45 @@ function createUpdateCapability(deps) {
 
     function installByOpenShell(filePath) {
         return new Promise(resolve => {
-            const command = `xterm -T 安装更新 -e "sudo dpkg -i ${filePath} && echo 安装完成，3s后退出安装程序\n sleep 3"`;
-            exec(command, (err, _stdout, stderr) => resolve(!err && !stderr));
+            execFile(
+                'xterm',
+                ['-T', 'Install update', '-e', 'sudo', 'dpkg', '-i', filePath],
+                (err, _stdout, stderr) => resolve(!err && !stderr),
+            );
         });
     }
 
     function installByXdgOpen(filePath) {
         return new Promise(resolve => {
-            exec(`xdg-open ${filePath}`, (err, _stdout, stderr) => resolve(!err && !stderr));
+            execFile('xdg-open', [filePath], (err, _stdout, stderr) => resolve(!err && !stderr));
         });
     }
 
     function installByDpkg(filePath) {
         return new Promise(resolve => {
             const sudo = loadSudoPrompt();
-            sudo.exec(`dpkg -i ${filePath}`, { name: 'install' }, error => resolve(!error));
+            const quotedPath = `'${filePath.replaceAll("'", "'\\''")}'`;
+            sudo.exec(`dpkg -i ${quotedPath}`, { name: 'install' }, error => resolve(!error));
         });
+    }
+
+    function assertInstallerPath(filePath) {
+        if (typeof filePath !== 'string' || !filePath) {
+            throw new TypeError('installer path must be a non-empty string');
+        }
+        const platformPath = os.isWindows() ? path.win32 : path.posix;
+        if (!platformPath.isAbsolute(filePath)) {
+            throw new Error('installer path must be absolute');
+        }
+        const extension = platformPath.extname(filePath).toLowerCase();
+        const allowed = os.isWindows()
+            ? ['.exe', '.msi']
+            : os.isMacOS()
+                ? ['.dmg', '.pkg']
+                : ['.deb'];
+        if (!allowed.includes(extension)) {
+            throw new Error(`installer extension is not allowed on this platform: ${extension || '(none)'}`);
+        }
     }
 
     async function installDebOnLinux(filePath) {
@@ -129,6 +163,7 @@ function createUpdateCapability(deps) {
     }
 
     async function installApp(filePath) {
+        if (os.isWindows() || os.isMacOS() || os.isLinux()) assertInstallerPath(filePath);
         logger.info('执行大版本安装文件', filePath);
         if (os.isLinux()) {
             const started = await installDebOnLinux(filePath);

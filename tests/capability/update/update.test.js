@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
@@ -15,13 +16,18 @@ function createHarness(platform = 'win32', overrides = {}) {
             readdirSync: () => [],
             existsSync: file => files.has(file),
             readJSONSync: file => files.get(file),
+            readFileSync: file => files.get(file),
             renameSync: (from, to) => calls.push(['rename', from, to]),
             removeSync: file => calls.push(['remove', file]),
         },
         semver: require('semver'),
-        download: async (url, dir, options) => calls.push(['download', url, dir, options]),
+        download: async (url, dir, options) => {
+            calls.push(['download', url, dir, options]);
+            files.set(nodePath.join(dir, options.filename), Buffer.from('payload'));
+        },
         randomUUID: () => 'temp-id',
-        exec: vi.fn(),
+        createHash,
+        execFile: vi.fn((_file, _args, callback) => callback(null, '', '')),
         app: { exit: code => calls.push(['exit', code]) },
         dialog: { showErrorBox: (...args) => calls.push(['dialog', ...args]) },
         shell: { openPath: async file => { calls.push(['openPath', file]); return ''; } },
@@ -47,8 +53,9 @@ function createHarness(platform = 'win32', overrides = {}) {
 describe('capability/update platform contract', () => {
     it.each(['win32', 'darwin'])('%s 使用 shell.openPath 启动安装器并退出旧进程', async platform => {
         const { calls, update } = createHarness(platform);
-        await expect(update.installApp('/tmp/setup.pkg')).resolves.toEqual({ started: true });
-        expect(calls).toContainEqual(['openPath', '/tmp/setup.pkg']);
+        const installer = platform === 'win32' ? 'C:\\Temp\\setup.exe' : '/tmp/setup.pkg';
+        await expect(update.installApp(installer)).resolves.toEqual({ started: true });
+        expect(calls).toContainEqual(['openPath', installer]);
         expect(calls).toContainEqual(['exit', 1]);
     });
 
@@ -71,6 +78,21 @@ describe('capability/update platform contract', () => {
             message: 'access denied',
         });
         expect(calls.some(call => call[0] === 'dialog')).toBe(true);
+    });
+
+    it('rejects relative paths and installer extensions for another platform', async () => {
+        const { calls, update } = createHarness('win32');
+        await expect(update.installApp('setup.exe')).rejects.toThrow(/absolute/);
+        await expect(update.installApp('C:\\Temp\\payload.deb')).rejects.toThrow(/installer/);
+        expect(calls.some(call => call[0] === 'openPath')).toBe(false);
+    });
+
+    it('passes Linux installer paths as execFile arguments without shell interpolation', async () => {
+        const execFile = vi.fn((_file, _args, callback) => callback(null, '', ''));
+        const { update } = createHarness('linux', { execFile });
+        const installer = "/tmp/release name';touch owned;.deb";
+        await expect(update.installApp(installer)).resolves.toEqual({ started: true });
+        expect(execFile).toHaveBeenCalledWith('xdg-open', [installer], expect.any(Function));
     });
 });
 
@@ -105,6 +127,19 @@ describe('capability/update package storage', () => {
             download: async () => { throw failure; },
         });
         await expect(update.downloadPkg({ url: 'https://example.test/a.asax' })).rejects.toBe(failure);
+        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
+    });
+
+    it('verifies optional SHA-256 integrity before promoting a download', async () => {
+        const { calls, update } = createHarness();
+        await expect(update.downloadPkg({
+            url: 'https://example.test/a.asax',
+            integrity: 'sha256-' + createHash('sha256').update('payload').digest('hex'),
+        })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
+        await expect(update.downloadPkg({
+            url: 'https://example.test/b.asax',
+            integrity: '0'.repeat(64),
+        })).rejects.toThrow(/integrity/);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 });

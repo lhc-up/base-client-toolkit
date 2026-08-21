@@ -9,8 +9,8 @@ const path = require('path');
 const fse = require('fs-extra');
 const semver = require('semver');
 const download = require('download');
-const { randomUUID } = require('crypto');
-const { exec } = require('child_process');
+const { createHash, randomUUID } = require('crypto');
+const { execFile } = require('child_process');
 const { app, dialog, shell } = require('electron');
 
 const logger = require('../logger');
@@ -25,7 +25,8 @@ module.exports = createUpdateCapability({
     semver,
     download,
     randomUUID,
-    exec,
+    createHash,
+    execFile,
     app,
     dialog,
     shell,

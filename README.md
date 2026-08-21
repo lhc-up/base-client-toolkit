@@ -37,7 +37,9 @@ npm install log4js electron-store semver download @vscode/sudo-prompt
 
 以上均为 optional peer dependency，按实际使用的 capability 安装即可。聚合入口会延迟加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 的提权安装回退路径实际执行时加载。
 
-update 的 `installApp(filePath)` 在 Windows/macOS 通过 Electron `shell.openPath` 启动安装器，Linux 使用 xdg-open/dpkg/Loongnix 回退链；返回 `{ started, reason? }`，未知平台明确返回 `unsupported-platform`。增量下载只接受 pathname 以 `.asax` 结尾的 URL，落盘后改名为 `.asar`。
+update 的 `installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。
+
+toolkit 只提供下载、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径直接交给这些 API。
 
 ## 热键配置（shortcut）
 
