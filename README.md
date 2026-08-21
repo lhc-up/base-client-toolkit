@@ -41,7 +41,9 @@ update 的 `installApp(filePath)` 只接受绝对路径和当前平台安装器�
 
 业务主进程已经取得本地增量包时，可调用 `stageLocalPkg({ sourcePath, integrity })`。该方法只接受绝对 `.asax` 路径和必填 SHA-256，先复制到 `updatePackage` 内的随机临时文件，校验成功后再替换为同名 `.asar`；失败只清理临时文件，不删除来源文件，也不会在校验前覆盖已有包。
 
-toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 package/installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径直接交给这些 API。
+业务主进程已经取得安装器但需要等待用户确认时，使用 `stageLocalInstaller({ sourcePath, integrity })` 把文件复制到 `<temp>/base-client-toolkit-installers/<uuid>/` 并校验，再把返回的 staged descriptor 仅保存在主进程。确认安装时调用 `installStagedInstaller(staged)`；该方法会验证路径仍位于受控命名空间，并在启动前再次计算 SHA-256。取消时调用 `discardStagedInstaller(staged)`，后续启动可调用 `cleanupStagedInstallers()` best-effort 清理默认超过 24 小时的陈旧目录。Windows 安装器启动后可能锁定文件，旧客户端又会立即退出，因此成功启动不承诺当场删除 staged 文件。
+
+toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 package/installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径或伪造的 staged descriptor 直接交给这些 API。
 
 ## 热键配置（shortcut）
 

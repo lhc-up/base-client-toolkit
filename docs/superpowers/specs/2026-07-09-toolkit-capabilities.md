@@ -225,6 +225,19 @@ const stagedPath = await update.stageLocalPkg({
     integrity: '<64 hex chars>',
 });
 
+// 业务主进程已获得本地安装器时，复制到受控 temp 并校验
+const stagedInstaller = await update.stageLocalInstaller({
+    sourcePath: 'C:\\trusted-transfer\\setup.exe',
+    integrity: '<64 hex chars>',
+});
+
+// 用户确认后再次校验路径和 SHA-256，再启动平台安装器
+const installResult = await update.installStagedInstaller(stagedInstaller);
+
+// 取消尚未启动的安装，或在后续启动清理陈旧目录
+update.discardStagedInstaller(stagedInstaller);
+update.cleanupStagedInstallers(); // 默认清理超过 24 小时的受控目录
+
 // 多平台安装：Windows/macOS shell.openPath；Linux xterm / xdg-open / dpkg
 const result = await update.installApp(filePath);
 // { started: true }
@@ -236,7 +249,11 @@ update.quitApp();
 
 `corePkg` 形态：`{ name: string, version: string, ... }`。业务侧传入自己的 core 版本（例如从 `pkgJson` 读取）。
 
-`getUpdatePkgList()` 在扫描前确保 `updatePackage` 目录存在，并忽略无法读取或不匹配 `corePkg.name` 的条目。`downloadPkg()` 使用 URL pathname 推导文件名，查询参数不会进入落盘路径；可选 `integrity` 在临时文件晋升前做 SHA-256 校验，失败时清理随机临时文件。`stageLocalPkg()` 要求绝对 `.asax` 路径和必填 SHA-256，复制到同一目录的随机临时文件并校验后才晋升为 `.asar`，不会删除来源文件。`installApp()` 要求绝对路径和平台匹配扩展名，并对未知平台明确返回 `unsupported-platform`，不把“未执行任何安装动作”视为成功。可信 URL、manifest/action 授权和安装包来源仍由业务主进程负责，renderer 输入不得直接透传。
+`getUpdatePkgList()` 在扫描前确保 `updatePackage` 目录存在，并忽略无法读取或不匹配 `corePkg.name` 的条目。`downloadPkg()` 使用 URL pathname 推导文件名，查询参数不会进入落盘路径；可选 `integrity` 在临时文件晋升前做 SHA-256 校验，失败时清理随机临时文件。`stageLocalPkg()` 要求绝对 `.asax` 路径和必填 SHA-256，复制到同一目录的随机临时文件并校验后才晋升为 `.asar`，不会删除来源文件。
+
+`stageLocalInstaller()` 要求绝对路径、当前平台扩展名和必填 SHA-256，复制到 `<temp>/base-client-toolkit-installers/<uuid>/` 后校验复制字节；返回 descriptor 只应保存在主进程。`installStagedInstaller()` 同时验证 descriptor 路径未越出受控命名空间并重新计算 SHA-256，再复用 `installApp()`；`discardStagedInstaller()` 只删除该随机目录。`cleanupStagedInstallers()` 默认清理超过 24 小时的受控目录，单项失败记录日志后继续。Windows 成功启动的 installer 可能锁定文件，旧客户端会立即退出，因此该次调用不承诺当场删除。
+
+`installApp()` 继续兼容直接接收可信绝对路径，要求平台匹配扩展名，并对未知平台明确返回 `unsupported-platform`，不把“未执行任何安装动作”视为成功。可信 URL、manifest/action 授权和安装包来源仍由业务主进程负责，renderer 输入不得直接透传。
 
 ## §5 使用示例
 

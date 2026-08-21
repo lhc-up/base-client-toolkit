@@ -53,7 +53,10 @@ function createHarness(platform = 'win32', overrides = {}) {
             isWindows: () => platform === 'win32',
             isMacOS: () => platform === 'darwin',
         },
-        filePathConfig: { updatePackage: '/updates' },
+        filePathConfig: {
+            updatePackage: '/updates',
+            temp: platform === 'win32' ? 'C:\\Temp' : '/tmp',
+        },
         loadSudoPrompt: () => ({ exec: vi.fn() }),
         setTimeout: fn => fn(),
         ...overrides,
@@ -210,5 +213,141 @@ describe('capability/update package storage', () => {
             integrity: '0'.repeat(64),
         })).rejects.toBe(failure);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
+    });
+});
+
+describe('capability/update staged installer', () => {
+    it('copies, verifies, re-verifies, and launches a staged Windows installer', async () => {
+        const { calls, files, update } = createHarness();
+        const sourcePath = 'C:\\incoming\\setup.exe';
+        const payload = Buffer.from('trusted installer');
+        const integrity = createHash('sha256').update(payload).digest('hex');
+        const stagedPath = nodePath.join(
+            'C:\\Temp',
+            'base-client-toolkit-installers',
+            'temp-id',
+            'setup.exe',
+        );
+        files.set(sourcePath, payload);
+
+        const staged = await update.stageLocalInstaller({ sourcePath, integrity });
+        expect(staged).toEqual({ filePath: stagedPath, integrity, fileName: 'setup.exe' });
+        expect(calls).toContainEqual(['copy', sourcePath, stagedPath]);
+        expect(files.get(sourcePath)).toBe(payload);
+
+        await expect(update.installStagedInstaller(staged)).resolves.toEqual({ started: true });
+        expect(calls).toContainEqual(['openPath', stagedPath]);
+        expect(calls).toContainEqual(['exit', 1]);
+    });
+
+    it('rejects invalid installer inputs before copying', async () => {
+        const { calls, update } = createHarness();
+        await expect(update.stageLocalInstaller({
+            sourcePath: 'relative.exe',
+            integrity: '0'.repeat(64),
+        })).rejects.toThrow(/absolute/);
+        await expect(update.stageLocalInstaller({
+            sourcePath: 'C:\\incoming\\setup.deb',
+            integrity: '0'.repeat(64),
+        })).rejects.toThrow(/installer/);
+        await expect(update.stageLocalInstaller({
+            sourcePath: 'C:\\incoming\\setup.exe',
+            integrity: 'bad',
+        })).rejects.toThrow(/SHA-256/);
+        expect(calls.some(call => call[0] === 'copy')).toBe(false);
+
+        const unsupported = createHarness('freebsd');
+        await expect(unsupported.update.stageLocalInstaller({
+            sourcePath: '/tmp/setup.deb',
+            integrity: '0'.repeat(64),
+        })).rejects.toThrow(/unsupported/);
+        expect(unsupported.calls.some(call => call[0] === 'copy')).toBe(false);
+    });
+
+    it('refuses a staged installer that was replaced after staging', async () => {
+        const { calls, files, update } = createHarness();
+        const sourcePath = 'C:\\incoming\\setup.exe';
+        const payload = Buffer.from('trusted installer');
+        const integrity = createHash('sha256').update(payload).digest('hex');
+        files.set(sourcePath, payload);
+        const staged = await update.stageLocalInstaller({ sourcePath, integrity });
+        files.set(staged.filePath, Buffer.from('replaced installer'));
+
+        await expect(update.installStagedInstaller(staged)).rejects.toThrow(/integrity/);
+        expect(calls.some(call => call[0] === 'openPath')).toBe(false);
+    });
+
+    it('rejects forged staged paths outside the controlled temp namespace', async () => {
+        const { calls, files, update } = createHarness();
+        const filePath = 'C:\\outside\\setup.exe';
+        const payload = Buffer.from('outside installer');
+        const integrity = createHash('sha256').update(payload).digest('hex');
+        files.set(filePath, payload);
+
+        await expect(update.installStagedInstaller({ filePath, integrity, fileName: 'setup.exe' }))
+            .rejects.toThrow(/staged installer/);
+        expect(calls.some(call => call[0] === 'openPath')).toBe(false);
+    });
+
+    it('discards only a controlled staged installer directory and is idempotent', async () => {
+        const { calls, files, update } = createHarness();
+        const sourcePath = 'C:\\incoming\\setup.exe';
+        const payload = Buffer.from('trusted installer');
+        const integrity = createHash('sha256').update(payload).digest('hex');
+        files.set(sourcePath, payload);
+        const staged = await update.stageLocalInstaller({ sourcePath, integrity });
+        const stageDir = nodePath.dirname(staged.filePath);
+
+        expect(update.discardStagedInstaller(staged)).toBe(true);
+        expect(update.discardStagedInstaller(staged)).toBe(true);
+        expect(calls.filter(call => call[0] === 'remove' && call[1] === stageDir)).toHaveLength(2);
+        expect(() => update.discardStagedInstaller({
+            filePath: 'C:\\outside\\setup.exe',
+            integrity,
+        })).toThrow(/staged installer/);
+    });
+
+    it('cleans its controlled directory when installer copying fails', async () => {
+        const failure = new Error('copy failed');
+        const calls = [];
+        const { update } = createHarness('win32', {
+            fse: {
+                ensureDirSync: dir => calls.push(['ensureDir', dir]),
+                copyFileSync: () => { throw failure; },
+                removeSync: file => calls.push(['remove', file]),
+            },
+        });
+
+        await expect(update.stageLocalInstaller({
+            sourcePath: 'C:\\incoming\\setup.exe',
+            integrity: '0'.repeat(64),
+        })).rejects.toBe(failure);
+        expect(calls).toContainEqual([
+            'remove',
+            nodePath.join('C:\\Temp', 'base-client-toolkit-installers', 'temp-id'),
+        ]);
+    });
+
+    it('cleans only expired entries from the controlled installer namespace', () => {
+        const calls = [];
+        const stageRoot = nodePath.join('C:\\Temp', 'base-client-toolkit-installers');
+        const now = 2_000_000;
+        const { update } = createHarness('win32', {
+            fse: {
+                ensureDirSync: dir => calls.push(['ensureDir', dir]),
+                readdirSync: dir => {
+                    expect(dir).toBe(stageRoot);
+                    return ['expired-id', 'recent-id'];
+                },
+                statSync: entry => ({
+                    mtimeMs: entry.endsWith('expired-id') ? now - 10_000 : now - 100,
+                }),
+                removeSync: entry => calls.push(['remove', entry]),
+            },
+        });
+
+        expect(update.cleanupStagedInstallers({ maxAgeMs: 1_000, now })).toEqual({ removed: 1 });
+        expect(calls).toContainEqual(['remove', nodePath.join(stageRoot, 'expired-id')]);
+        expect(calls).not.toContainEqual(['remove', nodePath.join(stageRoot, 'recent-id')]);
     });
 });

@@ -32,7 +32,7 @@ describe('capability/update optional peers', () => {
                     return { isLinux: () => false, isLoongnix: () => false, isWindows: () => true };
                 }
                 if (request === '../../paths') {
-                    return { getFilePathConfig: () => ({ updatePackage: '.' }) };
+                    return { getFilePathConfig: () => ({ updatePackage: '.', temp: '.' }) };
                 }
                 return originalLoad.call(this, request, parent, isMain);
             };

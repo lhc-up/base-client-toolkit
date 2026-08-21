@@ -18,6 +18,7 @@ function createUpdateCapability(deps) {
     } = deps;
 
     const updatePackageDir = filePathConfig.updatePackage;
+    const installerStageRoot = path.join(filePathConfig.temp, 'base-client-toolkit-installers');
 
     function getUpdatePkgList(corePkg) {
         fse.ensureDirSync(updatePackageDir);
@@ -162,6 +163,9 @@ function createUpdateCapability(deps) {
         if (typeof filePath !== 'string' || !filePath) {
             throw new TypeError('installer path must be a non-empty string');
         }
+        if (!os.isWindows() && !os.isMacOS() && !os.isLinux()) {
+            throw new Error('installer platform is unsupported');
+        }
         const platformPath = os.isWindows() ? path.win32 : path.posix;
         if (!platformPath.isAbsolute(filePath)) {
             throw new Error('installer path must be absolute');
@@ -175,6 +179,71 @@ function createUpdateCapability(deps) {
         if (!allowed.includes(extension)) {
             throw new Error(`installer extension is not allowed on this platform: ${extension || '(none)'}`);
         }
+        return platformPath;
+    }
+
+    async function stageLocalInstaller({ sourcePath, integrity } = {}) {
+        const platformPath = assertInstallerPath(sourcePath);
+        const expected = normalizeIntegrity(integrity, { required: true });
+        const stageDir = path.join(installerStageRoot, randomUUID());
+        const fileName = platformPath.basename(sourcePath);
+        const filePath = path.join(stageDir, fileName);
+        try {
+            fse.ensureDirSync(stageDir);
+            fse.copyFileSync(sourcePath, filePath);
+            verifyIntegrity(filePath, expected, { required: true });
+            return { filePath, integrity: expected, fileName };
+        } catch (err) {
+            try { fse.removeSync(stageDir); } catch { /* best effort */ }
+            logger.error(err);
+            throw err;
+        }
+    }
+
+    function resolveStagedInstaller(staged = {}) {
+        if (!staged || typeof staged !== 'object') {
+            throw new TypeError('staged installer descriptor must be an object');
+        }
+        const platformPath = assertInstallerPath(staged.filePath);
+        const integrity = normalizeIntegrity(staged.integrity, { required: true });
+        const root = path.resolve(installerStageRoot);
+        const filePath = path.resolve(staged.filePath);
+        const relative = path.relative(root, filePath);
+        const segments = relative.split(path.sep).filter(Boolean);
+        if (!relative
+            || relative.startsWith(`..${path.sep}`)
+            || relative === '..'
+            || path.isAbsolute(relative)
+            || segments.length !== 2
+            || platformPath.basename(filePath) !== staged.fileName) {
+            throw new Error('staged installer path is outside the controlled temp namespace');
+        }
+        return { filePath, integrity, stageDir: path.dirname(filePath) };
+    }
+
+    function discardStagedInstaller(staged) {
+        const { stageDir } = resolveStagedInstaller(staged);
+        fse.removeSync(stageDir);
+        return true;
+    }
+
+    function cleanupStagedInstallers({ maxAgeMs = 24 * 60 * 60 * 1000, now = Date.now() } = {}) {
+        if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+            throw new TypeError('staged installer maxAgeMs must be a non-negative number');
+        }
+        fse.ensureDirSync(installerStageRoot);
+        let removed = 0;
+        for (const name of fse.readdirSync(installerStageRoot)) {
+            const entry = path.join(installerStageRoot, name);
+            try {
+                if (now - fse.statSync(entry).mtimeMs < maxAgeMs) continue;
+                fse.removeSync(entry);
+                removed += 1;
+            } catch (err) {
+                logger.error(err);
+            }
+        }
+        return { removed };
     }
 
     async function installDebOnLinux(filePath) {
@@ -221,7 +290,24 @@ function createUpdateCapability(deps) {
         return { started: false, reason: 'unsupported-platform' };
     }
 
-    return { getUpdatePkgList, getNewestPkg, downloadPkg, stageLocalPkg, installApp, quitApp };
+    async function installStagedInstaller(staged = {}) {
+        const { filePath, integrity } = resolveStagedInstaller(staged);
+        verifyIntegrity(filePath, integrity, { required: true });
+        return installApp(filePath);
+    }
+
+    return {
+        getUpdatePkgList,
+        getNewestPkg,
+        downloadPkg,
+        stageLocalPkg,
+        stageLocalInstaller,
+        installApp,
+        installStagedInstaller,
+        discardStagedInstaller,
+        cleanupStagedInstallers,
+        quitApp,
+    };
 }
 
 module.exports = { createUpdateCapability };
