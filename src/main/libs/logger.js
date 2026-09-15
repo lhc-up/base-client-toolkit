@@ -10,7 +10,7 @@
 
 const log4js = require('log4js');
 const path = require('path');
-const { getFilePathConfig } = require('../../paths');
+const { getFilePathConfig } = require('../paths');
 
 const { log: logDir } = getFilePathConfig();
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const example = require('../../../src/capability/example/index');
+const example = require('../../../src/main/capability/example/index');
 
 describe('capability/example: export shape', () => {
     it('exports an object', () => {

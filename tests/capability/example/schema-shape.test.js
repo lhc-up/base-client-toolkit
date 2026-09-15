@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const example = require('../../../src/capability/example/index');
+const example = require('../../../src/main/capability/example/index');
 
 const NAMESPACE_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const EVENT_NAME_RE = /^[A-Za-z0-9_-]+$/;

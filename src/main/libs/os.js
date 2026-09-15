@@ -7,7 +7,7 @@
 
 const os = require('os');
 const { execSync } = require('child_process');
-const logger = require('../logger');
+const logger = require('./logger');
 
 /**
  * 是否是 windows 系统

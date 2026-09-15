@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('capability aggregate optional peers', () => {
     it('can enumerate capabilities without loading their optional peers', () => {
-        const capabilityPath = path.resolve(__dirname, '../../../src/capability/index.js');
+        const capabilityPath = path.resolve(__dirname, '../../../src/main/capability/index.js');
         const script = `
             const Module = require('node:module');
             const optionalPeers = new Set([
@@ -19,7 +19,7 @@ describe('capability aggregate optional peers', () => {
                 return originalLoad.call(this, request, parent, isMain);
             };
             const capability = require(${JSON.stringify(capabilityPath)});
-            const expected = ['logger', 'os', 'shortcut', 'singleInstance', 'store', 'update'];
+            const expected = ['example', 'update'];
             if (JSON.stringify(Object.keys(capability).sort()) !== JSON.stringify(expected)) process.exit(2);
         `;
 

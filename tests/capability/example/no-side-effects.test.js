@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
-const modulePath = require.resolve('../../../src/capability/example/index');
+const modulePath = require.resolve('../../../src/main/capability/example/index');
 const fs = require('fs');
 
 describe('capability/example: zero side effects on require', () => {
@@ -15,7 +15,7 @@ describe('capability/example: zero side effects on require', () => {
     });
 
     it('require() does not throw', () => {
-        expect(() => require('../../../src/capability/example/index')).not.toThrow();
+        expect(() => require('../../../src/main/capability/example/index')).not.toThrow();
     });
 
     it('module source contains no Service/Notice/electron require()', () => {
@@ -32,15 +32,15 @@ describe('capability/example: zero side effects on require', () => {
 
     it('require() does not mutate global state', () => {
         const before = Object.keys(globalThis).sort().join(',');
-        require('../../../src/capability/example/index');
+        require('../../../src/main/capability/example/index');
         const after = Object.keys(globalThis).sort().join(',');
         expect(after).toBe(before);
     });
 
     it('within a single load, echo identity holds (handlers.echo === top-level echo)', () => {
-        const a = require('../../../src/capability/example/index');
+        const a = require('../../../src/main/capability/example/index');
         delete require.cache[modulePath];
-        const b = require('../../../src/capability/example/index');
+        const b = require('../../../src/main/capability/example/index');
         expect(a).not.toBe(b);
         expect(a.echo).not.toBe(b.echo);
         expect(Object.is(a.serviceSchema.handlers.echo, a.echo)).toBe(true);

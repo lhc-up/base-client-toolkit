@@ -5,4 +5,8 @@
  * the directory migration proceeds. This entry intentionally has no root
  * aggregate side effects.
  */
-module.exports = {};
+module.exports = {
+    capability: require('./capability'),
+    BaseWindow: require('./enhance/BaseWindow'),
+    paths: require('./paths'),
+};

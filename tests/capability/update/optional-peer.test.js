@@ -8,13 +8,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('capability/update optional peers', () => {
     it('does not expose sudo-prompt as a static require to webpack', () => {
-        const updatePath = path.resolve(__dirname, '../../../src/capability/update/index.js');
+        const updatePath = path.resolve(__dirname, '../../../src/main/capability/update/index.js');
         const source = fs.readFileSync(updatePath, 'utf8');
         expect(source).not.toMatch(/require\(['"]@vscode\/sudo-prompt['"]\)/);
     });
 
     it('loads without sudo-prompt until the privileged installer is used', () => {
-        const updatePath = path.resolve(__dirname, '../../../src/capability/update/index.js');
+        const updatePath = path.resolve(__dirname, '../../../src/main/capability/update/index.js');
         const script = `
             const Module = require('node:module');
             const originalLoad = Module._load;
@@ -25,10 +25,10 @@ describe('capability/update optional peers', () => {
                 if (request === 'electron') {
                     return { app: {}, dialog: {}, shell: {} };
                 }
-                if (request === '../logger') {
+                if (request === '../../libs/logger') {
                     return { error() {}, info() {}, shutdown() {} };
                 }
-                if (request === '../os') {
+                if (request === '../../libs/os') {
                     return { isLinux: () => false, isLoongnix: () => false, isWindows: () => true };
                 }
                 if (request === '../../paths') {

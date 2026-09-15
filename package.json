@@ -1,12 +1,13 @@
 {
     "name": "@base-client/toolkit",
     "version": "0.0.1",
-    "main": "src/index.js",
+    "main": "src/main/index.js",
     "exports": {
         "./main": "./src/main/index.js",
+        "./main/capability": "./src/main/capability/index.js",
         "./main/capability/*": "./src/main/capability/*/index.js",
         "./main/enhance/*": "./src/main/enhance/*.js",
-        "./main/utils/*": "./src/main/utils/*.js",
+        "./main/libs/*": "./src/main/libs/*.js",
         "./main/paths": "./src/main/paths.js",
         "./preload": "./src/preload/index.js",
         "./service": "./src/service/main.js",

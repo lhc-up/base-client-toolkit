@@ -31,7 +31,7 @@ require.cache[electronPath] = {
 };
 
 const { contextBridge, ipcRenderer } = electronMock;
-const preloadPath = require.resolve('../src/preload');
+const preloadPath = require.resolve('../src/preload/index.js');
 
 beforeEach(() => {
     delete require.cache[preloadPath];
@@ -52,14 +52,14 @@ afterAll(() => {
 
 describe('preload module exports', () => {
     it('exports init and exposeAPI (per overview §8.2)', () => {
-        const { init, exposeAPI } = require('../src/preload');
+        const { init, exposeAPI } = require('../src/preload/index.js');
         expect(typeof init).toBe('function');
         expect(typeof exposeAPI).toBe('function');
     });
 
     it('exposeAPI is the same internal helper used by init (contextIsolated path)', () => {
         Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
-        const { exposeAPI } = require('../src/preload');
+        const { exposeAPI } = require('../src/preload/index.js');
         exposeAPI('myCustomBridge', { hello: 'world' });
         expect(contextBridge.exposeInMainWorld).toHaveBeenCalledWith(
             'myCustomBridge',
@@ -70,7 +70,7 @@ describe('preload module exports', () => {
     it('exposeAPI uses window fallback when not contextIsolated', () => {
         Object.defineProperty(process, 'contextIsolated', { value: false, configurable: true });
         global.window = { existing: 1 };
-        const { exposeAPI } = require('../src/preload');
+        const { exposeAPI } = require('../src/preload/index.js');
         exposeAPI('myBridge', { v: 2 });
         expect(contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
         expect(global.window.myBridge).toEqual({ v: 2 });
@@ -83,7 +83,7 @@ describe('preload aggregator: init()', () => {
     it('default opts: exposes both appService and appNotice', () => {
         // 模拟 contextIsolated 环境
         Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
-        const { init } = require('../src/preload');
+        const { init } = require('../src/preload/index.js');
         init();
         const names = contextBridge.exposeInMainWorld.mock.calls.map(c => c[0]).sort();
         expect(names).toEqual(['appNotice', 'appService']);
@@ -91,7 +91,7 @@ describe('preload aggregator: init()', () => {
 
     it('opts.service=false: skips appService bridge (avoids sendSync deadlock)', () => {
         Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
-        const { init } = require('../src/preload');
+        const { init } = require('../src/preload/index.js');
         init({ service: false });
         const names = contextBridge.exposeInMainWorld.mock.calls.map(c => c[0]);
         expect(names).toEqual(['appNotice']);
@@ -99,7 +99,7 @@ describe('preload aggregator: init()', () => {
 
     it('opts.notice=false: skips appNotice bridge', () => {
         Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
-        const { init } = require('../src/preload');
+        const { init } = require('../src/preload/index.js');
         init({ notice: false });
         const names = contextBridge.exposeInMainWorld.mock.calls.map(c => c[0]);
         expect(names).toEqual(['appService']);
@@ -107,7 +107,7 @@ describe('preload aggregator: init()', () => {
 
     it('opts.service=false && opts.notice=false: no bridge exposed', () => {
         Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
-        const { init } = require('../src/preload');
+        const { init } = require('../src/preload/index.js');
         init({ service: false, notice: false });
         expect(contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
     });
@@ -115,7 +115,7 @@ describe('preload aggregator: init()', () => {
     it('non-isolated fallback: writes to window[name]', () => {
         Object.defineProperty(process, 'contextIsolated', { value: false, configurable: true });
         global.window = {};
-        const { init } = require('../src/preload');
+        const { init } = require('../src/preload/index.js');
         init({ service: false });
         expect(contextBridge.exposeInMainWorld).not.toHaveBeenCalled();
         expect(global.window.appNotice).toBeDefined();

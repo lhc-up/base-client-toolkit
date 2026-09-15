@@ -4,7 +4,7 @@ const require = createRequire(import.meta.url);
 
 const { installElectronMock, reset, lastInstance } = require('./_electron-mock');
 installElectronMock(vi);
-const BaseWindow = require('../../src/enhance/BaseWindow');
+const BaseWindow = require('../../src/main/enhance/BaseWindow');
 
 class Win extends BaseWindow {
     getPageUrl() { return 'app://x.html'; }

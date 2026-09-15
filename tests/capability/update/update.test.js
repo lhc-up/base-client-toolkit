@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const nodePath = require('node:path');
-const { createUpdateCapability } = require('../../../src/capability/update/createUpdateCapability');
+const { createUpdateCapability } = require('../../../src/main/capability/update/createUpdateCapability');
 
 function createHarness(platform = 'win32', overrides = {}) {
     const calls = [];

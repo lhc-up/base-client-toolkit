@@ -12,7 +12,7 @@ describe('toolkit runtime package boundary', () => {
         expect(exports['./main']).toBe('./src/main/index.js');
         expect(exports['./main/capability/*']).toBe('./src/main/capability/*/index.js');
         expect(exports['./main/enhance/*']).toBe('./src/main/enhance/*.js');
-        expect(exports['./main/utils/*']).toBe('./src/main/utils/*.js');
+        expect(exports['./main/libs/*']).toBe('./src/main/libs/*.js');
         expect(exports['./main/paths']).toBe('./src/main/paths.js');
         expect(exports['./service']).toBe('./src/service/main.js');
         expect(exports['./notice']).toBe('./src/notice/main.js');

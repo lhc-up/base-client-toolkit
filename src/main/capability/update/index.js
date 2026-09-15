@@ -13,10 +13,10 @@ const { createHash, randomUUID } = require('crypto');
 const { execFile } = require('child_process');
 const { app, dialog, shell } = require('electron');
 
-const logger = require('../logger');
-const os = require('../os');
+const logger = require('../../libs/logger');
+const os = require('../../libs/os');
 const { getFilePathConfig } = require('../../paths');
-const { loadOptionalPeer } = require('../../shared/loadOptionalPeer');
+const { loadOptionalPeer } = require('../../../shared/loadOptionalPeer');
 const { createUpdateCapability } = require('./createUpdateCapability');
 
 module.exports = createUpdateCapability({
