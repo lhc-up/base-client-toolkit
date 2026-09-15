@@ -3,6 +3,7 @@ ehthumbs.db
 Desktop.ini
 
 .idea/
+.worktrees/
 .DS_Store
 ._DS_Store
 ._*
