@@ -174,8 +174,8 @@ SM4 作为独立目录完整实现，暂不建立独立 npm package，但保持�
 - 替换不得影响父目录中的其他历史文件或目录；
 - entry 的最终解析路径必须位于给定解压根目录内，不能只检查绝对路径或字符串 `..`；
 - 不设置单文件大小、总展开大小或压缩比阈值；磁盘不足由文件系统以 `ENOSPC` 等错误报告；
-- symlink、hardlink、设备文件和其他特殊 entry 一律失败；
-- 错误必须包含具体 entry 类型和路径，明确指出是否因软链接导致失败；
+- 不恢复 ZIP 中的 symlink/hardlink 元数据；在当前流式 parser 下统一按普通 `File/Directory` 处理；
+- 如果底层 parser 明确暴露未知特殊 entry type，仍然失败并包含 entry 类型和路径；
 - 任意失败或取消都清理 staging，保留旧最终目录；
 - `describe.json`、`main` 入口等业务协议不进入 libs，也不进入通用 toolkit capability。
 
@@ -256,7 +256,7 @@ renderer 只传受控 `scope + fileName` 和目标父 scope，不接触绝对路
 - SM4 使用第一手规范测试向量，并覆盖任意 chunk 边界、padding 错误和大文件有界内存；
 - integrity 覆盖大文件流式 hash，验证主线程无同步整包读取；
 - download 使用本地 HTTP/HTTPS fixture 覆盖状态码、重定向、fallback、取消、超时、Content-Encoding、写盘失败和清理；
-- archive 覆盖普通 ZIP、可选解密、任意输入 chunk、目录替换、路径逃逸、链接/特殊 entry、取消、写盘失败和 staging 清理；
+- archive 覆盖普通 ZIP、可选解密、任意输入 chunk、目录替换、路径逃逸、未知 entry type、取消、写盘失败和 staging 清理；
 - capability 覆盖 Service DTO、Notice 状态顺序、taskId 关联、取消以及多窗口发送范围；
 - toolkit 全量测试和 package exports 检查必须通过。
 

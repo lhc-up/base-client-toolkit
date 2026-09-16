@@ -16,7 +16,10 @@ async function createZip(entries) {
     const ended = new Promise(resolve => output.once('end', resolve));
     const archive = archiver('zip', { zlib: { level: 8 } });
     archive.pipe(output);
-    for (const entry of entries) archive.append(entry.content, { name: entry.name });
+    for (const entry of entries) {
+        if (entry.type === 'symlink') archive.symlink(entry.name, entry.content);
+        else archive.append(entry.content, { name: entry.name });
+    }
     await archive.finalize();
     await ended;
     return Buffer.concat(chunks);
@@ -66,6 +69,18 @@ describe('streaming safe ZIP archive', () => {
 
         expect(() => resolveInside(target, '../outside.txt'))
             .toThrowError(expect.objectContaining({ code: 'ARCHIVE_PATH_ESCAPE', entryPath: '../outside.txt' }));
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('does not restore ZIP symlink metadata and writes the streamed entry as a regular file', async () => {
+        const root = await tempRoot();
+        const target = path.join(root, 'paper-4');
+        const zip = await createZip([{ type: 'symlink', name: 'current.txt', content: 'releases/v1.txt' }]);
+
+        await extractZip({ input: Readable.from([zip]), destinationDir: target });
+
+        expect(await fsp.readFile(path.join(target, 'current.txt'), 'utf8')).toBe('releases/v1.txt');
+        expect((await fsp.lstat(path.join(target, 'current.txt'))).isSymbolicLink()).toBe(false);
         await fsp.rm(root, { recursive: true, force: true });
     });
 });

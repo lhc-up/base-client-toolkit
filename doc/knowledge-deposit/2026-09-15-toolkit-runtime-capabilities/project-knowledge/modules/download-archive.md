@@ -24,4 +24,4 @@ archive 第一版只支持 ZIP。参考已通过业务验证的 `E:/code/eachina
 
 调用方传入解压结果的父目录，最终目录由 ZIP 基础名称生成并独占。替换只影响这个 ZIP 对应的目录，不影响父目录下其他历史内容。磁盘不足由文件系统报错；不设置人工容量阈值。
 
-entry 安全规则：最终 `path.resolve(root, entryPath)` 必须仍位于 root；symlink、hardlink、设备文件和其他特殊 entry 直接失败，并明确指出类型和路径。
+entry 安全规则：最终 `path.resolve(root, entryPath)` 必须仍位于 root。第一版不恢复 ZIP symlink/hardlink 元数据；流式 parser 将其暴露为普通文件时按普通文件写入。若 parser 暴露未知特殊 entry type，则失败并明确指出类型和路径。

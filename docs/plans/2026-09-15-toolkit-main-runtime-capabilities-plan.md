@@ -214,7 +214,7 @@ git commit -m "feat: add Electron net streaming download library"
 
 **Step 1: Write failing tests**
 
-Cover plain ZIP, SM4-decrypted ZIP stream, arbitrary input chunking, target-parent plus ZIP-basename output directory, replacement of only that owned directory, path escape after `path.resolve`, symlink/hardlink/special-entry errors, `ENOSPC` propagation, cancellation, and staging cleanup.
+Cover plain ZIP, SM4-decrypted ZIP stream, arbitrary input chunking, target-parent plus ZIP-basename output directory, replacement of only that owned directory, path escape after `path.resolve`, unknown entry-type errors, `ENOSPC` propagation, cancellation, and staging cleanup. The first implementation does not restore ZIP symlink/hardlink metadata; entries exposed by the streaming parser as ordinary files are written as ordinary files.
 
 **Step 2: Run RED**
 
@@ -224,7 +224,7 @@ Expected: FAIL because the new library is absent.
 
 **Step 3: Implement using mature libraries**
 
-Use `archiver` for creation and `unzipper.Parse()` for entry-by-entry extraction. Insert the optional SM4 Transform before the parser. Do not create an intermediate decrypted ZIP. Resolve each final path against the extraction root and reject anything outside it. Reject symlink, hardlink, device, and other special entries with an error that identifies `entryType` and `entryPath`. Do not impose artificial size thresholds; propagate filesystem errors and clean staging.
+Use `archiver` for creation and `unzipper.Parse()` for entry-by-entry extraction. Insert the optional SM4 Transform before the parser. Do not create an intermediate decrypted ZIP. Resolve each final path against the extraction root and reject anything outside it. Do not restore symlink/hardlink metadata; entries exposed as ordinary files are written as ordinary files. If the parser exposes an unknown entry type, fail with `entryType` and `entryPath`. Do not impose artificial size thresholds; propagate filesystem errors and clean staging.
 
 **Step 4: Run GREEN**
 

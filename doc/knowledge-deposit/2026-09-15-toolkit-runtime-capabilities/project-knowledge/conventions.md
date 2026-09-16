@@ -25,7 +25,7 @@
 - archive 第一版只支持 ZIP；压缩使用成熟库，解压使用流式 parser。
 - 可选解密 Transform 直接接入解压管道，不产生中间解密文件。
 - 解压结果按“父目录 + ZIP 基础名称”建立独占目录，避免把新内容合并到用户传入的父目录。
-- entry 的最终解析路径必须位于解压根目录；symlink、hardlink 和特殊文件直接失败并明确报错。
+- entry 的最终解析路径必须位于解压根目录；第一版不恢复 ZIP symlink/hardlink 元数据，流式 parser 暴露为普通文件时按普通文件写入；未知特殊 entry type 才失败并明确报错。
 - `describe.json`、`main` 入口和业务密钥派生属于具体业务应用，不属于 toolkit archive。
 
 ## 完整性和加密
