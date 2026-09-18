@@ -12,6 +12,8 @@
 const capabilityLoaders = {
     example: () => require('./example'),
     update: () => require('./update'),
+    download: () => require('./download'),
+    archive: () => require('./archive'),
 };
 
 module.exports = Object.defineProperties({}, Object.fromEntries(

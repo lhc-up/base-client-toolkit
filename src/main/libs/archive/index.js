@@ -47,16 +47,32 @@ async function commitDirectory(stagingDir, destinationDir) {
     }
 }
 
-async function extractZip({ input, destinationDir, decrypt } = {}) {
+async function extractZip({ input, destinationDir, decrypt, signal } = {}) {
     if (!input || typeof input.pipe !== 'function') throw new TypeError('archive input must be a readable stream');
     if (typeof destinationDir !== 'string' || !path.isAbsolute(destinationDir)) {
         throw new TypeError('archive destinationDir must be absolute');
     }
+    if (signal && signal.aborted) {
+        throw archiveError('ARCHIVE_CANCELLED', 'Archive extraction cancelled');
+    }
     const parent = path.dirname(destinationDir);
     const baseName = path.basename(destinationDir);
+    await fsp.mkdir(parent, { recursive: true });
     const stagingDir = await fsp.mkdtemp(path.join(parent, `.${baseName}.staging-`));
     const source = decrypt ? input.pipe(decrypt) : input;
     const parser = source.pipe(unzipper.Parse());
+    // Extra error emissions (re-destroy after rejection, late entry errors) must not crash the process.
+    parser.on('error', () => {});
+    const onAbort = () => {
+        const error = archiveError('ARCHIVE_CANCELLED', 'Archive extraction cancelled');
+        input.destroy();
+        if (decrypt && typeof decrypt.destroy === 'function') decrypt.destroy();
+        parser.destroy(error);
+    };
+    if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
     const jobs = [];
     let entryFailure = null;
     const processEntry = async entry => {
@@ -95,6 +111,8 @@ async function extractZip({ input, destinationDir, decrypt } = {}) {
         parser.destroy(error);
         await fsp.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
         throw error;
+    } finally {
+        if (signal) signal.removeEventListener('abort', onAbort);
     }
 }
 
