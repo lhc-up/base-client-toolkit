@@ -1,11 +1,6 @@
 /**
- * Toolkit T-02: capability/os
- *
- * 完全照搬 base-client.bake src/main/libs/os.js。
- * 顶层 require ../logger（DAG 允许）。
+ * 平台检测与系统信息工具（Windows / Linux / macOS / Loongnix 等）。
  */
-
-const os = require('os');
 const { execSync } = require('child_process');
 const logger = require('./logger');
 

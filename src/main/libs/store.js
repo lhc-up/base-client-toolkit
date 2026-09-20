@@ -1,9 +1,7 @@
 /**
- * Toolkit T-07: capability/store
- *
- * 完全照搬 base-client.bake src/main/libs/store.js。
- * 顶层：new Store({ cwd: filePathConfig.store, name: '__store__' })。
- * 无 init —— 业务侧要改 store 目录，在 require 本模块之前调 shared/paths.setPathConfig({ store: '...' })。
+ * 持久存储：electron-store KV + 独立文件两种形态。
+ * 顶层即创建 Store 实例（cwd 取 paths 配置的 store 目录），无 init。
+ * 坑：业务侧要改存储目录，必须在 require 本模块之前调用 setPathConfig({ store: '...' })。
  */
 
 const fse = require('fs-extra');

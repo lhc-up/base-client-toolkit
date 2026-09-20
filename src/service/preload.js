@@ -5,7 +5,6 @@ const {
     META_LIST_CHANNEL, asyncChannel, syncChannel,
 } = require('./protocol');
 
-// envelope 形态由 shared/envelope 定义（架构 §7.1）；preload 只消费不构造。
 
 function isPlainObject(v) {
     if (v === null || typeof v !== 'object') return false;
@@ -84,8 +83,6 @@ function buildSyncCaller(ns, name) {
  * 要拿同步返回值必须调 `appService[ns].fooSync(...)`。
  * 若渲染端把 `.foo()` 的 Promise 直接赋给 template 会渲染成 `[object Promise]`，
  * 且无 runtime 报错——常见踩点，切勿混淆。
- *
- * 详见架构 §3.5（preload 一次性 init 与 opt-out 契约）。
  *
  * @returns {Object} appService
  * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error

@@ -1,9 +1,6 @@
 /**
- * Service 模块私有协议：channel 命名。
- *
- * envelope 定义已上收到 shared/envelope（详见架构 §7.1 / §7.7），
- * 本文件只承载 Service 模块内部使用的 channel 命名规则。
- * M2 主端与 preload 直接 require shared/envelope。
+ * Service 模块私有协议：IPC channel 命名规则。
+ * 应答信封形态见 shared/envelope。
  */
 
 const META_LIST_CHANNEL = 'service:getServiceList';

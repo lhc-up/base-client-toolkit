@@ -15,7 +15,7 @@ function isPlainObject(v) {
 }
 
 /**
- * 校验 Service schema 的形态与命名合规（详见架构 §7.5）。
+ * 校验 Service schema 的形态与命名合规。
  * 抛错则 schema 不合规；无返回值。
  *
  * @param {Object} schema
@@ -135,7 +135,6 @@ function handleGetServiceList(event) {
 
 /**
  * 初始化 Service，注册 schema 列表并挂载元通道 listener。
- * 详见架构 §3.5 preload 一次性 init 的对应约束。
  *
  * @param {{ userSchemas: Object[] }} opts
  * @throws {Error} opts 缺失、userSchemas 非数组、schema 校验不通过或 namespace 冲突时抛错

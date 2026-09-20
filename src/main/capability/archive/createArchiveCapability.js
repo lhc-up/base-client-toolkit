@@ -1,7 +1,7 @@
 /**
  * Renderer-facing archive capability.
  *
- * Contract (see 2026-09-15 toolkit main runtime capabilities design):
+ * 契约要点：
  * - Service: archive.extract(options) -> { taskId }, archive.cancel(taskId) -> { accepted }
  * - Notice: archive.changed carries started/completed/failed/cancelled
  * - Renderer passes controlled scope + fileName and a target parent scope only;

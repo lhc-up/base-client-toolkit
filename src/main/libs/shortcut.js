@@ -1,8 +1,6 @@
 /**
- * Toolkit T-03: capability/shortcut
- *
- * 完全照搬 base-client.bake src/main/libs/shortcut.js。
- * 顶层 app.on('will-quit') 挂钩子；module.exports = function init() 供业务侧显式调用触发注册。
+ * 全局热键：注册 DevTools 开关快捷键（默认 Command+Control+Alt+F6）。
+ * 业务侧显式调用触发注册；app will-quit 时自动反注册全部热键。
  */
 
 const { app, BrowserWindow, globalShortcut } = require('electron');

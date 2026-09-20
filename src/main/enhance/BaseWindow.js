@@ -2,7 +2,7 @@ const { BrowserWindow } = require('electron');
 const merge = require('lodash.merge');
 
 /**
- * BrowserWindow 抽象基类（详见架构 §4 / M4 spec）。
+ * BrowserWindow 抽象基类。
  *
  * 模板方法模式：`create()` 是模板方法；子类实现 `getPageUrl()` 抽象方法，
  * 可选 override `getWindowOptions()` / `onCreated(window)` / `onClosed()`。

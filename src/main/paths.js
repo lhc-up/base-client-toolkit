@@ -8,8 +8,6 @@
  *
  * 业务侧可在**任何 capability 首次被 require 之前**调用 setPathConfig(override) 覆盖部分字段。
  * 覆盖后再调 getFilePathConfig() 返回合并后的配置。
- *
- * 参考：base-client.bake src/main/libs/utils.js
  */
 
 const { app } = require('electron');

@@ -1,25 +1,22 @@
 /**
- * 参考 capability 模块：示范 M5 契约（详见 M5 spec §4 / capability 说明 §4）。
+ * capability 样例：示范 Service / Notice 契约的标准用法。
  *
  * 契约要点：
- * - 顶层导出 echo 方法（主端可直接调用）
- * - serviceSchema：供 Service.init 挂载，暴露给渲染端 async + sync
- * - noticeSchema：供 Notice.init 挂载，定义事件命名空间
- * - echo 在三处出现（顶层 export / serviceSchema.handlers.echo / sync: ['echo']），
- *   三处指向同一份函数引用 —— 一份实现，三种调用路径。
- * - 本示例无顶层装配：echo 是纯函数，无外部资源。真实 capability 允许在顶层完成运行时装配
- *   （如 log4js.configure、new Store），详见 M5 §2.4。
- * - 顶层不 require Service / Notice：只导出 schema 描述对象，是否真挂载由业务侧决定。
+ * - 顶层导出方法供主进程直接调用；serviceSchema 供 Service.init 挂载（async + sync）；
+ *   noticeSchema 供 Notice.init 挂载（事件命名空间）。
+ * - echo 在顶层 export / serviceSchema.handlers.echo / sync: ['echo'] 三处指向同一函数引用：
+ *   一份实现，三种调用路径。
+ * - 真实 capability 允许在顶层完成运行时装配（如 log4js.configure、new Store）。
+ * - 顶层不 require Service / Notice：只导出 schema 描述对象，是否挂载由业务侧决定。
  */
-
 /**
- * 回显 message。用于示范 M2 Service handler 形态。
+ * 回显 message。
  * @param {*} message
  * @returns {*}
  */
 const echo = message => message;
 
-/** Service schema：暴露给渲染端。命名遵循架构 §7.4 合法 JS 标识符规则。 */
+/** Service schema：暴露给渲染端。namespace 与 handler 名须为合法 JS 标识符。 */
 const serviceSchema = {
     namespace: 'example',
     handlers: {

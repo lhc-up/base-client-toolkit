@@ -1,13 +1,10 @@
 /**
- * shared 命名空间聚合入口。
+ * shared 聚合入口：main 与 preload 共用的纯 JS 基础设施。
+ * - serializer: IPC 安全序列化与 Error 还原
+ * - envelope: IPC 应答信封
+ * - naming: namespace / handler / event 命名规则
  *
- * 导出跨模块共享基础设施（详见架构 §5、§8）：
- * - serializer: IPC 安全序列化 + reviveError + serializeForIpc（§7.2 / §7.3）
- * - envelope: IPC 应答信封（§7.1）
- * - naming: 命名规则（§7.4）
- *
- * shared/config、shared/enum、shared/utils、shared/constant 已删除
- * （违反 §8 shared/ 准入规则）。
+ * 本目录只允许无 Node/Electron 依赖的纯 JS 模块。
  */
 
 const serializer = require('./serializer');

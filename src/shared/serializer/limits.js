@@ -1,5 +1,5 @@
 /**
- * serialize 默认配置（详见架构 §7.2 / §7.6）。
+ * serialize 默认配置。
  *
  * strict: false 是硬编码 —— 默认更安全，用户忘配置也不会在生产崩溃。
  * 开发环境用户若想暴露序列化 Proxy / toJSON 抛错等真 bug，主动 opt-in：

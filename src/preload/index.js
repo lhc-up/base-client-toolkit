@@ -1,5 +1,5 @@
 /**
- * preload 聚合入口（详见架构 §10.5）。
+ * preload 聚合入口。
  *
  * 关键契约：若主端未 init Service/Notice，preload 必须在 opts 中 opt-out 对应 bridge，
  * 否则 buildAppService/buildAppNotice 内的 sendSync 元通道因无 listener

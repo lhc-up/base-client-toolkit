@@ -104,8 +104,6 @@ function buildNamespaceApi(namespace, eventSet, listeners) {
  * 注册的回调都能被同一 dispatcher 触发，可互相拆卸。namespace 名撞上顶层保留字
  * (subscribe/unsubscribe/once) 时构建抛错。
  *
- * 详见架构 §3.5（preload 一次性 init 与 opt-out 契约）与 M3 spec §5.2 / §5.3。
- *
  * @returns {Object} appNotice
  * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error；
  *                 namespace 与顶层保留字冲突时抛错

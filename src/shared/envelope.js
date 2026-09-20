@@ -1,11 +1,11 @@
 /**
- * IPC 应答统一信封（详见架构 §7.1）。
+ * IPC 应答统一信封。
  *
  * 所有 IPC 应答必须使用此信封形态：
  * - 成功：{ ok: true, data: <serialize 后的值> }
  * - 失败：{ ok: false, error: <serialize 后的 Error> }
  *
- * 主端 handler 永不 throw（详见架构 §3.3），异常统一封装为 errorEnvelope 返回。
+ * 主端 handler 永不 throw，异常统一封装为 errorEnvelope 返回。
  * preload 端解包路径唯一：if (ok) return data; else throw reviveError(error);
  *
  * Notice 推送通道 `notice:event` 不走信封（单向流无返回值）。

@@ -14,7 +14,7 @@ const registeredSchemas = new Map();
 const RESERVED_TOP_LEVEL_KEYS = new Set(['subscribe', 'unsubscribe', 'once']);
 
 /**
- * 校验 Notice schema 的形态与命名合规（详见架构 §7.5）。
+ * 校验 Notice schema 的形态与命名合规。
  * 抛错则 schema 不合规；无返回值。
  *
  * @param {Object} schema

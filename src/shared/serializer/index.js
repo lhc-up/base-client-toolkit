@@ -151,11 +151,8 @@ function safeStringify(value, opts) {
 }
 
 /**
- * IPC 专用序列化封装（详见架构 §7.2）。
- *
- * 硬编码 strict: false —— 生产环境 IPC 路径永不抛错的落地承诺。
- * M2 / M3 主端与 preload 所有序列化调用点必须使用此函数，
- * 业务代码不应手动传 { strict: false }。
+ * IPC 专用序列化封装：硬编码 strict: false，保证生产环境 IPC 路径永不抛错。
+ * 主端与 preload 的所有 IPC 序列化调用点统一使用此函数。
  *
  * @param {*} value 任意值
  * @returns {*} plain 数据（JSON-safe）

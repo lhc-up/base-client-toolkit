@@ -1,7 +1,7 @@
 /**
  * Renderer-facing download capability.
  *
- * Contract (see 2026-09-15 toolkit main runtime capabilities design):
+ * 契约要点：
  * - Service: download.start(options) -> { taskId }, download.cancel(taskId) -> { accepted }
  * - Notice: download.changed carries started/progress/completed/failed/cancelled
  * - No getState/getProgress polling handlers; renderer never receives absolute paths

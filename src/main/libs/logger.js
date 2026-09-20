@@ -1,11 +1,7 @@
 /**
- * Toolkit T-01: capability/logger
- *
- * bake logUtil.js 直接照搬（含 print / .bind(logger) / 6 级方法 / shutdown）。
- * 顶层就求值：log4js.configure + getLogger + isDev。
- * 无 init —— 业务侧要覆盖日志目录，在 require 本模块之前调 shared/paths.setPathConfig({ log: '...' })。
- *
- * 参考：base-client.bake src/main/libs/logUtil.js
+ * 日志库：log4js 封装，六级方法 + print 原样输出 + shutdown。
+ * 顶层即完成 log4js.configure，无 init。
+ * 坑：业务侧要覆盖日志目录，必须在 require 本模块之前调用 setPathConfig({ log: '...' })。
  */
 
 const log4js = require('log4js');
@@ -109,6 +105,6 @@ module.exports = {
     shutdown() {
         log4js.shutdown();
     },
-    // export print 供其它模块共用（bake 也 export）
+    // print 供其它模块原样输出共用
     print,
 };
