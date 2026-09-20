@@ -1,43 +1,99 @@
 # @base-client/toolkit
 
-**Electron 增强工具包**，提供 Service、Notice、BaseWindow 及各 capability 子模块。
+**Electron 增强工具包**，提供 Service、Notice、BaseWindow、窗口/系统工具库，以及 renderer 可直接使用的运行时 capability。
 
-## 能力矩阵
+包边界为显式子路径导出，**没有根聚合入口**（`require('@base-client/toolkit')` 不可解析）。
 
-| 模块 | 路径 | 说明 |
+## 包边界
+
+| 子路径 | 进程 | 说明 |
 |---|---|---|
-| Service | `require('@base-client/toolkit').Service` | 服务主端 |
-| Notice | `require('@base-client/toolkit').Notice` | 通知主端 |
-| BaseWindow | `require('@base-client/toolkit').BaseWindow` | 窗口增强 |
-| shared | `require('@base-client/toolkit').shared` | 共享工具 |
-| logger | `require('@base-client/toolkit/capability').logger` | 日志 |
-| os | `require('@base-client/toolkit/capability').os` | 系统能力 |
-| shortcut | `require('@base-client/toolkit/capability').shortcut` | 全局热键 |
-| singleInstance | `require('@base-client/toolkit/capability').singleInstance` | 单实例 |
-| store | `require('@base-client/toolkit/capability').store` | 持久存储 |
-| update | `require('@base-client/toolkit/capability').update` | 自动更新 |
+| `/main` | main | 主进程聚合入口（capability 懒加载、BaseWindow、paths） |
+| `/main/capability` | main | capability 聚合入口（懒加载） |
+| `/main/capability/*` | main | 单个 capability（`example`/`update`/`download`/`archive`） |
+| `/main/enhance/*` | main | 窗口增强（如 `BaseWindow`） |
+| `/main/libs/*` | main | 主进程通用库（见下表） |
+| `/main/paths` | main | 受控路径配置（`getFilePathConfig`/`setPathConfig`） |
+| `/service`、`/service/preload` | main / preload | Service 主端与 preload 桥 |
+| `/notice`、`/notice/preload` | main / preload | Notice 主端与 preload 桥 |
+| `/preload` | preload | preload 聚合入口（装配 `appService`/`appNotice`） |
+| `/shared` | 通用 | 共享工具（envelope、serializer 等，不含 Node/Electron 依赖） |
 
-也可直接通过子路径精确引入各模块（如 `require('@base-client/toolkit/capability/logger')`）。
-
-## 接入前置依赖
-
-各 capability 依赖的 npm 包需项目侧自行安装（peerDependencies）：
-
-| capability | 依赖包 |
-|---|---|
-| logger（T-01） | `log4js` |
-| store（T-07） | `electron-store` |
-| update（T-08） | `semver`, `download`, `@vscode/sudo-prompt` |
-
-安装方式：
-
-```bash
-npm install log4js electron-store semver download @vscode/sudo-prompt
+```js
+const { capability, paths } = require('@base-client/toolkit/main');
+const { download } = require('@base-client/toolkit/main/capability');
+const sm4 = require('@base-client/toolkit/main/libs/sm4');
 ```
 
-以上均为 optional peer dependency，按实际使用的 capability 安装即可。聚合入口会延迟加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 的提权安装回退路径实际执行时加载。
+## 主进程 libs（`/main/libs/*`）
 
-update 的 `installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。
+| 库 | 形态 | 说明 |
+|---|---|---|
+| `download` | 目录 | Electron `net.request` 流式下载：多 URL fallback、进度回调、取消、临时文件原子晋升 |
+| `archive` | 目录 | ZIP 流式归档：可选解密 Transform 直连、独占目录替换、路径边界校验、staging 清理 |
+| `integrity` | 目录 | 异步流式完整性校验（sha256/md5） |
+| `sm4` | 目录 | SM4-CBC 标准实现，Node crypto 风格 API（流式/非流式） |
+| `scope` | 目录 | 受控 scope 规则：`/` 字符串或段数组规范化、逃逸拒绝、纯 fileName 校验 |
+| `logger`、`os`、`shortcut`、`singleInstance`、`store` | 文件 | 日志、系统信息、全局热键、单实例、持久存储 |
+
+## Capability（`/main/capability/*`）
+
+capability 是 renderer 可直接使用的一件完整事情，通过 `serviceSchema`/`noticeSchema` 挂载：
+
+```js
+// 主进程
+const Service = require('@base-client/toolkit/service');
+const Notice = require('@base-client/toolkit/notice');
+const { download, archive } = require('@base-client/toolkit/main/capability');
+
+Service.init({ userSchemas: [download.serviceSchema, archive.serviceSchema] });
+Notice.init({ userSchemas: [download.noticeSchema, archive.noticeSchema] });
+
+// preload
+require('@base-client/toolkit/preload').init();
+```
+
+### download capability
+
+Service：`download.start(options) → { taskId }`，`download.cancel(taskId) → { accepted }`。
+
+```js
+appService.download.start({
+    scope: 'paper/1',                 // '/' 分隔字符串或段数组，解析在受控存储根目录下
+    urls: ['https://a/f.bin', 'https://b/f.bin'],  // 多 URL 按序 fallback
+    fileName: 'f.bin',                // 可选；缺省取 URL basename，再缺省生成 UUID
+    integrity: { expected: '<sha256 hex>' },       // 可选；不匹配则删文件并 failed
+});
+// 批量：{ scope, files: [{ urls, fileName?, integrity? }, ...] }，同一 taskId 顺序执行
+```
+
+Notice：`download.changed`，载荷 `{ taskId, scope, fileName, state, transferred?, total?, percent?, size?, error? }`，`state` 为 `started/progress/completed/failed/cancelled`。**不提供 getState/getProgress**，进度与终态只通过 Notice 推送；载荷不含绝对路径；`taskId` 仅用于取消和事件关联，持久文件以 `scope + fileName` 引用。
+
+### archive capability
+
+Service：`archive.extract(options) → { taskId }`，`archive.cancel(taskId) → { accepted }`。
+
+```js
+appService.archive.extract({
+    source: { scope: 'incoming', fileName: 'pack.zip' },
+    target: { scope: 'papers' },      // 解压到 papers/pack/（按包名独占目录，替换不影响邻居）
+    decrypt: { name: 'biz-sm4' },     // 可选；引用主进程注册的命名解密器
+});
+```
+
+Notice：`archive.changed`，载荷 `{ taskId, source, targetScope, state, directory?, error? }`，`state` 为 `started/completed/failed/cancelled`。
+
+解密材料不出主进程：业务在主进程启动时注册命名解密器，renderer 只传名字：
+
+```js
+const sm4 = require('@base-client/toolkit/main/libs/sm4');
+archive.registerDecryptor('biz-sm4', () => sm4.createDecipheriv('SM4-CBC', key, iv));
+```
+
+归档语义：首版只支持 ZIP；不恢复 symlink/hardlink 元数据（流式 parser 暴露为普通文件的按普通文件写入）；只校验 entry 最终解析路径不越出解压根目录；不设人为大小阈值，磁盘错误由文件系统返回；失败清理 staging 并保留旧目标目录。
+### update capability
+
+保留既有契约。`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。
 
 业务主进程已经取得本地增量包时，可调用 `stageLocalPkg({ sourcePath, integrity })`。该方法只接受绝对 `.asax` 路径和必填 SHA-256，先复制到 `updatePackage` 内的随机临时文件，校验成功后再替换为同名 `.asar`；失败只清理临时文件，不删除来源文件，也不会在校验前覆盖已有包。
 
@@ -45,23 +101,26 @@ update 的 `installApp(filePath)` 只接受绝对路径和当前平台安装器�
 
 toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定业务可信源。允许域名、manifest 签名、action 授权和 package/installer provenance 必须由调用方主进程持有，不能把 renderer 传入的 URL/本地路径或伪造的 staged descriptor 直接交给这些 API。
 
+## 接入前置依赖
+
+`archiver`、`fs-extra`、`lodash.merge`、`unzipper` 为 toolkit 直接依赖，随包安装。其余按 capability 自行安装（optional peerDependencies）：
+
+| capability | 依赖包 |
+|---|---|
+| logger | `log4js` |
+| store | `electron-store` |
+| update | `semver`, `download`, `@vscode/sudo-prompt` |
+
+聚合入口懒加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 提权安装回退路径实际执行时加载。
+
 ## 热键配置（shortcut）
 
-`shortcut()` 支持按需传入配置对象：
-
 ```js
-const { shortcut } = require('@base-client/toolkit/capability');
+const shortcut = require('@base-client/toolkit/main/libs/shortcut');
 
 // 默认 F6（Command+Control+Alt+F6）
 shortcut();
 
 // 兼容业务历史习惯，指定 F5
 shortcut({ devToolsKey: 'Command+Control+Alt+F5' });
-```
-
-## 版本
-
-```js
-const { VERSION } = require('@base-client/toolkit');
-console.log(VERSION); // e.g. "0.0.1"
 ```
