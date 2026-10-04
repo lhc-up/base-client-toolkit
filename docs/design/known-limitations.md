@@ -29,6 +29,43 @@
   - 是否调整及采用哪种方式属 toolkit 的设计选择，此处只记录缺口。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
 
+- **`main/libs/logger.js` 的 `shutdown()` 丢掉了 log4js 的完成信号，调用它与完全不调用等效**：
+  `log4js.shutdown(callback)` 是异步的，`callback` 在所有 appender 结束后触发
+  （`log4js/lib/log4js.js:105` 的签名与 `:99-103` 的 JSDoc；file appender 的实现是
+  `writer.end('', 'utf-8', complete)`，见 `log4js/lib/appenders/file.js:114-121`）。
+  而本包的封装是 `shutdown() { log4js.shutdown(); }`（`src/main/libs/logger.js:105-107`）
+  ——既不接收回调也不返回值，**调用方没有任何办法得知日志是否已落盘**。
+  - 实测（Node 16 / log4js 6.8，写 2000 条后立即退出，文件实际落盘行数）：
+
+    | 退出方式 | 落盘 |
+    |---|---|
+    | 直接 `process.exit(0)` | **0 条** |
+    | `log4js.shutdown(() => process.exit(0))` | **2000 条** |
+    | `log4js.shutdown(); process.exit(0)`（= 本包封装的用法） | **0 条** |
+
+    最后一行与第一行结果相同，即**经本包封装调用 `shutdown` 不产生任何效果**。
+    丢的是 Node `WriteStream` 在进程内存里的待写队列——那些字节从未发起 `write(2)`，
+    因此内核无从兜底；已进入内核 page cache 的部分不受进程退出影响。
+  - **这个缺口正落在本包自己引导的用法上**：`service/main.js:154` 与 `notice/main.js:147`
+    的 cleanup 注释约定"在 app `will-quit` 中调用"，`main/libs/shortcut.js:25` 也以
+    `will-quit` 反注册热键。业务沿此引导在 `will-quit` 里关闭日志，写出来就是
+    `logger.shutdown()`，而 `will-quit` 的 handler 不等异步操作——除非
+    `preventDefault()` 后手动退出，但那需要一个"flush 完成"的信号，本包没有提供。
+  - **建议改为返回 Promise**：
+
+    ```js
+    shutdown() {
+        return new Promise((resolve, reject) => {
+            log4js.shutdown(err => (err ? reject(err) : resolve()));
+        });
+    },
+    ```
+
+    相比透传回调，Promise 形态**对现有调用方向后兼容**——不等待的调用方忽略返回值即可，
+    行为与现在完全一致；需要等待的用 `await logger.shutdown()`。改动 4 行。
+  - 是否调整及采用哪种形态属 toolkit 的设计选择，此处只记录缺口与实测依据。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
+
 - **`BaseWindow` 不提供 preload 路径的默认值或推导**：`BaseWindow.create()` 的内置默认
   options 只有 `{ show: false, backgroundColor: '#ffffff' }`，业务必须在
   `getWindowOptions()` 里自行给出 `webPreferences.preload` 的绝对路径；
