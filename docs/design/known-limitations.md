@@ -77,6 +77,63 @@
     而不是 toolkit 内置默认——后者会破坏两个包的独立性。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
 
+- **`libs/download` 的 `timeoutMs` 只覆盖「等 response header」阶段，body 传输期间没有任何
+  超时保护**：`createElectronNetTransport` 在 `request.on('response')` 回调里就调用了
+  `cleanup()` 清除 timer（`main/libs/download/index.js:37-45`），随后的
+  `pipeline(response.body, progress, createWriteStream(tempPath))` 不再受任何时限约束，
+  也没有 stall 检测。**后果**：服务器发完响应头后卡住（弱网、中间代理设备、服务端半挂）
+  时，`task.promise` 永不 settle，调用方的 `await` 永久挂起——调用方甚至无法靠超时自救，
+  只能依赖外部的 `cancel()`。
+  - 这不是"业务多要的功能"：被它替换掉的 npm `download@8`（底层 `got`）的
+    `timeout.request` 覆盖的是**整个请求周期**（含 body 传输），迁移后这段行为丢失了。
+  - 建议：在 pipeline 阶段加 stall 超时（例如两次 `onProgress` 间隔超过 N 秒即 abort），
+    或让 `timeoutMs` 的语义覆盖整个任务而非仅握手段。
+  - 业务侧现状：`questionnaire-answer-v3.0-migration` 已用
+    `Promise.race([task.promise, 超时后 task.cancel()])` 在自己的 capability 里包了一层，
+    上限取 `3min × URL 数`。上游修复后该绕行代码可删除。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
+
+- **`capability/download` 的编排层与 renderer 契约层没有分离，业务主进程无法复用它的编排**：
+  该 capability 把三个关注点焊死在一起——① 下载任务编排（`taskId`、循环 `files`、
+  cancel 传导）属**通用**能力；② 存储根与 scope 解析（`index.js:20` 顶层取
+  `getFilePathConfig().storageResource` 并写死进工厂）属半通用；③ renderer 契约
+  （`download.changed` 的事件名与载荷形状）只对渲染层有意义。业务主进程想复用 ①，
+  却被迫接受 ② 与 ③；而 `exports` 只映射 `./main/capability/*` → `*/index.js`、
+  **不暴露 `createDownloadCapability`**，连注入 `filePathConfig` 这条路也走不通
+  （工厂本身是刻意留了注入点的，见其文件头注释）。
+  - **另一项同源缺口**：没有「目标已存在且完整性匹配则跳过下载」的语义
+    （`libs/download:111-112` 每次都先 `rm` 再 `rename`），离线/弱网场景的资源缓存
+    无法直接复用。
+  - 建议：**把编排下沉到 `libs`**——给 `libs/download` 加批量入口（如
+    `startBatch({ files: [{ urls, destinationPath, integrity?, skipIfValid? }], onFileChange, concurrency? })`），
+    只接收**完整的 destinationPath**、不碰 scope、不发 Notice，文件级生命周期通过回调给出；
+    `capability/download` 则退化为薄适配层 = `libs` 批量编排 + scope 解析 + Notice 映射。
+    这与架构既定的依赖方向一致（capability 可复用 libs，libs 不得依赖 capability）。
+  - 其中「已缓存且完整性匹配则跳过」建议作为 `libs` 能力（上面的 `skipIfValid`）而非业务语义：
+    按能力准入六条逐条衡量——普遍性（任何客户端下载缓存都需要）、去业务化（只需 path +
+    期望 digest）、契约稳定、可脱离业务测试、不绑业务语义、降低重复，均成立。
+  - 实证：业务侧因此重写了「循环 + Notice 推送 + integrity 调用」，与本 capability
+    重叠约 30%。按上述方向改造后，这部分可回收。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
+
+- **可单独引用的 `libs` 模块缺少用法文档，且无法从聚合入口发现**：三件事叠加——
+  ① README 的「主进程 libs」表把 `logger` / `os` / `shortcut` / `singleInstance` / `store`
+  五个文件类模块挤在一行、说明合计约十个字，其中 **`logger` / `os` / `singleInstance` /
+  `store` 四个没有任何用法示例**（而 `download` / `archive` / `update` / `shortcut`
+  各有带代码的专门章节）；② `/main` 聚合入口只导出 `capability` / `BaseWindow` / `paths`、
+  **不含 libs**（源码注释表明「无根聚合入口」是刻意的包边界），所以 libs 只能靠记深路径；
+  ③ 没有类型声明，IDE 不补全，子路径拼错只在运行时暴露。
+  - **另有一处时序陷阱未进 README**：`setPathConfig()` 必须在任何 capability 以及
+    `libs/logger`、`libs/store` 被 `require` **之前**调用（它们顶层即取值并 `ensureDirSync`），
+    晚于它们则无效**且不报错**。该约束目前只写在 `paths.js:9` 与 `logger.js:4` 的源码注释里，
+    踩中的代价是日志/缓存已落到默认目录且改不动。
+  - 建议：① 给那四个模块各补最小用法（`logger` 至少需要：六级方法 + `print` + `shutdown`、
+    落点与轮转策略、`log4js` 这个 optional peer 的安装要求）；② 在 README 的 `/main/paths`
+    一行补上述时序约束；③ **可选**——给 `/main` 增加 `libs` 的**懒加载** getter 以便发现式使用
+    （必须懒加载：`logger` 顶层会 `log4js.configure`、`paths` 顶层会 `ensureDirSync`，
+    饿加载会破坏「严格按需引入」）；若认为「无根聚合入口」是不可让的包边界，则只做 ①②。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
