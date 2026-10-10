@@ -70,7 +70,8 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `integrity` | 目录 | 异步流式完整性校验（sha256/md5） |
 | `sm4` | 目录 | SM4-CBC 标准实现，Node crypto 风格 API（流式/非流式） |
 | `scope` | 目录 | 受控 scope 规则：`/` 字符串或段数组规范化、逃逸拒绝、纯 fileName 校验 |
-| `logger`、`os`、`shortcut`、`singleInstance`、`store` | 文件 | 日志、系统信息、全局热键、单实例、持久存储 |
+| `logger` | 文件 | log4js 封装，六级方法 + `print` + `shutdown`。顶层即 `configure`、无 init。**契约：六级方法与 `shutdown` 永不抛**，失败走 `console.error` 次级通道自报并丢弃该条 —— 写日志不得影响主流程，调用方（尤其经 Service 跨进程的渲染层）可放心 fire-and-forget。要覆盖日志目录须在 require 本模块**之前**调 `setPathConfig({ log })` |
+| `os`、`shortcut`、`singleInstance`、`store` | 文件 | 系统信息、全局热键、单实例、持久存储 |
 
 ## Capability（`/main/capability/*`）
 

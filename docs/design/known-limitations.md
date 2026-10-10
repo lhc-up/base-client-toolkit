@@ -29,6 +29,20 @@
   - 是否调整及采用哪种方式属 toolkit 的设计选择，此处只记录缺口。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
 
+- ~~**`main/libs/logger.js` 的 `shutdown()` 丢掉了 log4js 的完成信号，调用它与完全不调用等效**~~
+  **✅ 已修（2026-10-09）**：`shutdown()` 改为返回 Promise，appender 全部结束后 resolve。
+  **与下方建议有一处刻意偏差 —— 不 reject**：drain 期间的 appender 错误只走次级通道
+  （`console.error`）自报，Promise 照常 resolve。理由是同一轮给本模块定下的
+  「六级方法与 `shutdown` 永不抛」契约：调用方在退出路径上，「日志没写全」不是它需要
+  分支处理的事，而退出流程不能因此卡住或抛。
+  同轮补了 `tests/logger.test.js`（17 例）覆盖该契约。
+  **归因已更正**：此前以为「要等 flush」是 Node 异步 I/O 的普遍问题，实测是
+  **Electron 退出语义**特有的 —— 纯 Node 只要不主动调 `process.exit()` 就会自然写完。
+  且**不等的后果是静默丢失**（零异常、退出码 0），不是报错。
+  完整实测数据与「丢的是通知而非一律丢数据」的区分，唯一归属是
+  `src/main/libs/logger.js` 的 `shutdown` 注释，此处不复制。
+  <br>原文保留如下：
+
 - **`main/libs/logger.js` 的 `shutdown()` 丢掉了 log4js 的完成信号，调用它与完全不调用等效**：
   `log4js.shutdown(callback)` 是异步的，`callback` 在所有 appender 结束后触发
   （`log4js/lib/log4js.js:105` 的签名与 `:99-103` 的 JSDoc；file appender 的实现是
