@@ -30,6 +30,20 @@ describe('toolkit runtime package boundary', () => {
         expect(fs.existsSync(path.join(root, 'src/preload/index.js'))).toBe(true);
     });
 
+    // unzipper 必须走深层子路径，**原因是构建硬约束、不是体积优化**：根入口
+    // `unzipper/unzip.js` 的 `exports.Open = require('./lib/Open')` 链上要
+    // `@aws-sdk/client-s3`（支持直读 S3 上的 zip），那是 unzipper 的 optional 依赖、
+    // 默认不装，webpack 静态解析找不到即报错 —— 消费方的 main 分段会直接编译失败。
+    // 2026-10-09 实测验证过：改成根导入后业务仓 `dev:app` 的 main 编译立刻挂掉。
+    // 本条断言连同这段说明一起保留，避免再有人"为了可读性"把它改回根导入。
+    // archiver 没有这个问题，用根导入。
+    it('imports unzipper via deep path to avoid its optional @aws-sdk dependency', () => {
+        const source = fs.readFileSync(path.join(root, 'src/main/libs/archive/index.js'), 'utf8');
+        expect(source).toContain("require('unzipper/lib/parse')");
+        expect(source).not.toMatch(/require\('unzipper'\)/);
+        expect(source).toContain("require('archiver')");
+    });
+
     it('keeps shared modules free of runtime-only imports', () => {
         const sharedRoot = path.join(root, 'src/shared');
         const files = [];

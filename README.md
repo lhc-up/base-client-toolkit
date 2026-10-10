@@ -66,7 +66,7 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | 库 | 形态 | 说明 |
 |---|---|---|
 | `download` | 目录 | Electron `net.request` 流式下载：多 URL fallback、进度回调、取消、临时文件原子晋升 |
-| `archive` | 目录 | ZIP 流式归档：可选解密 Transform 直连、独占目录替换、路径边界校验、staging 清理 |
+| `archive` | 目录 | ZIP 双向。`extractZip` 流式解压：可选解密 Transform 直连、独占目录替换、路径边界校验、staging 清理。`createZip({ sources, output, level, signal })` 打包：`sources` 收绝对路径数组、文件或目录皆可，缺源即报 `ARCHIVE_SOURCE_MISSING`（不静默产出残缺 zip），先写 staging 再 rename 原子晋升 |
 | `integrity` | 目录 | 异步流式完整性校验（sha256/md5） |
 | `sm4` | 目录 | SM4-CBC 标准实现，Node crypto 风格 API（流式/非流式） |
 | `scope` | 目录 | 受控 scope 规则：`/` 字符串或段数组规范化、逃逸拒绝、纯 fileName 校验 |
