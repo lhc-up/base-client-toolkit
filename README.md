@@ -148,6 +148,12 @@ toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定
 | store | `electron-store` |
 | update | `semver`, `download`, `@vscode/sudo-prompt` |
 
+**⚠️ `log4js` 声明为 optional，但实际上是必装** —— 它被 Service 直接依赖
+（`src/service/main.js` 用 toolkit 自己的 logger 记录来自 preload 的诊断上报，
+见 `service:serializerReport`）。只要用到 Service（几乎必然）就会加载它，
+未装则在加载 `main/libs/logger` 时直接抛。声明保持 optional 是为了不动既有消费者的
+安装要求，但**新接入的客户端请一并安装 `log4js`**。
+
 聚合入口懒加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 提权安装回退路径实际执行时加载。
 
 ## 热键配置（shortcut）

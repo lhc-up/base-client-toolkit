@@ -9,6 +9,9 @@ function buildElectronMock() {
     const handlers = new Map();
     const syncListeners = new Map();
     return {
+        // service/main.js 直接 require 了 main/libs/logger，后者经 paths.js 读
+        // app.getPath('userData') —— 缺 app 会让整个测试文件在 collect 阶段就挂
+        app: { getPath: () => require('node:os').tmpdir() },
         ipcMain: {
             handle: vi.fn((channel, fn) => { handlers.set(channel, fn); }),
             on: vi.fn((channel, fn) => { syncListeners.set(channel, fn); }),

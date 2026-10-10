@@ -2,7 +2,7 @@ const { ipcRenderer } = require('electron');
 const { serializeForIpc } = require('../shared/serializer');
 const { reviveError } = require('../shared/serializer/reviveError');
 const {
-    META_LIST_CHANNEL, asyncChannel, syncChannel,
+    META_LIST_CHANNEL, SERIALIZER_REPORT_CHANNEL, asyncChannel, syncChannel,
 } = require('./protocol');
 
 
@@ -21,18 +21,43 @@ function isPlainObject(v) {
  * 主进程 handler 收到 channel 字符串后，需通过 event.sender.send(channel, data) 触发回调
  * （handler 需在 serviceSchema.needsEvent 中声明以拿到 event）
  *
+ * **拷贝用逐键 try/catch，不用 `{ ...arg }`**：对象展开会读全部可枚举属性，
+ * 遇到抛错的 getter 就**直接抛出去、整次 Service 调用失败** —— 而下游
+ * `serializeForIpc` 对同一对象是安全的（有 try/catch，降级成
+ * `[Unserializable: …]` 并上报）。2026-10-10 实测确认了这个绕行：
+ *
+ * ```
+ * { ...bad }        → ❌ 展开即抛: getter 故意抛
+ * serializeForIpc() → ✅ {"boom":"[Unserializable: getter 故意抛]"} + 上报 $.boom
+ * ```
+ *
+ * 所以这里按 key 逐个取、单独 try —— 抛错的键**跳过不拷**，交给下游 serializer
+ * 去记录并降级（那里有统一的占位与上报通道，不在这里重复实现）。
+ *
  * @param {string} baseChannel 用作 channel 前缀，避免不同 handler 之间命名冲突
  * @param {any[]} args 用户传入的实参列表
  * @returns {{ mappedArgs: any[], tempChannels: string[] }} mappedArgs 用于 serializeForIpc；tempChannels 用于调用结束后 removeAllListeners
  */
 function replaceCallbacksWithChannels(baseChannel, args) {
     const tempChannels = [];
-    const mappedArgs = args.map(arg => {
+    const skips = [];
+    const mappedArgs = args.map((arg, argIndex) => {
         if (!isPlainObject(arg)) return arg;
-        const cloned = { ...arg };
-        for (const key of Object.keys(cloned)) {
-            const cb = cloned[key];
-            if (typeof cb !== 'function') continue;
+        const cloned = {};
+        for (const key of Object.keys(arg)) {
+            let cb;
+            try {
+                cb = arg[key];
+            } catch (err) {
+                // getter 抛错：跳过该键。**但必须自己上报** —— 这个键根本不会进
+                // serializeForIpc（对象里已没有它），下游无从知道，不报就又静默了
+                skips.push({ argIndex, path: `$.${key}`, reason: `getter threw: ${err.message}` });
+                continue;
+            }
+            if (typeof cb !== 'function') {
+                cloned[key] = cb;
+                continue;
+            }
             const cbChannel = `${baseChannel}-${key}-${Date.now()}-${Math.random()}`;
             ipcRenderer.on(cbChannel, (_event, data) => cb(data));
             cloned[key] = cbChannel;
@@ -40,14 +65,44 @@ function replaceCallbacksWithChannels(baseChannel, args) {
         }
         return cloned;
     });
-    return { mappedArgs, tempChannels };
+    return { mappedArgs, tempChannels, skips };
+}
+
+/**
+ * 序列化全部入参，并**把途中的占位/截断事件收集起来上报主进程**。
+ *
+ * `serializeForIpc` 对不可克隆的对象（函数、DOM、Symbol…）会降级成占位符，超深也会截断 ——
+ * 这本身是必要的适配，但**此前完全静默**：数据在通道上被改动，没有任何人知道。
+ * 2026-10-10 的 `paperJson` 缺陷就是这么漏出去的（那份是本仓自己成因不同，但同一类静默）。
+ *
+ * 上报走 `SERIALIZER_REPORT_CHANNEL` 单向 send，**载荷不经 serializeForIpc** ——
+ * 否则就是"序列化出问题时再走一次序列化"，自激。
+ *
+ * @param {string} channel 目标通道名，用于定位是哪个 Service 调用
+ * @param {any[]} mappedArgs 已把回调替换成临时通道的入参
+ * @returns {any[]} 可过 IPC 的参数
+ */
+function serializeArgs(channel, mappedArgs, skips) {
+    const reports = [...(skips || [])];
+    const safeArgs = mappedArgs.map((a, argIndex) =>
+        serializeForIpc(a, {
+            onError: (reason, path) => reports.push({ argIndex, path, reason }),
+        }),
+    );
+    if (reports.length) {
+        try {
+            // 单向、不等回复；失败也不能影响本次调用
+            ipcRenderer.send(SERIALIZER_REPORT_CHANNEL, { channel, reports });
+        } catch (_) { /* swallow */ }
+    }
+    return safeArgs;
 }
 
 function buildAsyncCaller(ns, name) {
     const channel = asyncChannel(ns, name);
     return async (...args) => {
-        const { mappedArgs, tempChannels } = replaceCallbacksWithChannels(channel, args);
-        const safeArgs = mappedArgs.map(a => serializeForIpc(a));
+        const { mappedArgs, tempChannels, skips } = replaceCallbacksWithChannels(channel, args);
+        const safeArgs = serializeArgs(channel, mappedArgs, skips);
         try {
             const envelope = await ipcRenderer.invoke(channel, ...safeArgs);
             if (envelope && envelope.ok) return envelope.data;
@@ -61,8 +116,8 @@ function buildAsyncCaller(ns, name) {
 function buildSyncCaller(ns, name) {
     const channel = syncChannel(ns, name);
     return (...args) => {
-        const { mappedArgs, tempChannels } = replaceCallbacksWithChannels(channel, args);
-        const safeArgs = mappedArgs.map(a => serializeForIpc(a));
+        const { mappedArgs, tempChannels, skips } = replaceCallbacksWithChannels(channel, args);
+        const safeArgs = serializeArgs(channel, mappedArgs, skips);
         try {
             const envelope = ipcRenderer.sendSync(channel, ...safeArgs);
             if (envelope && envelope.ok) return envelope.data;
