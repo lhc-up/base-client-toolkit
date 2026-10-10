@@ -13,11 +13,19 @@
  */
 const DEFAULTS = Object.freeze({
     maxDepth: 32,
-    maxStringLength: 10240,
+    // 日志/诊断用的单条上限。**IPC 路径不受此限制** —— serializeForIpc 显式传
+    // Infinity，见 index.js 的说明。调高到 64 KB 是为了装得下正常业务 body，
+    // 同时相对 logger 的 maxLogSize（100K）仍留余量。
+    maxStringLength: 65536,
     maxArrayLength: 1000,
     maxKeys: 1000,
     strict: false,
     onError: null,
+    // 二进制原样透传。**只有 IPC 路径该开** —— Electron 的 structured clone 原生
+    // 支持 ArrayBuffer / TypedArray（实测 3MB Uint8Array、5MB 字符串完整到达），
+    // 把它们换成占位符等于摧毁 IPC 本来就有的能力。
+    // 日志路径（safeStringify）必须保持 false，否则一条日志能打出几 MB 二进制。
+    binaryPassthrough: false,
 });
 
 let globalDefaults = { ...DEFAULTS };
@@ -35,6 +43,7 @@ function resolveOpts(opts = {}) {
         maxKeys: opts.maxKeys ?? globalDefaults.maxKeys,
         strict: opts.strict ?? globalDefaults.strict,
         onError: opts.onError ?? globalDefaults.onError,
+        binaryPassthrough: opts.binaryPassthrough ?? globalDefaults.binaryPassthrough,
     };
 }
 

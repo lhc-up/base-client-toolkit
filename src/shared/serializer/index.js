@@ -22,6 +22,10 @@ function serialize(value, opts) {
         const t = typeof v;
         if (t === 'string') {
             if (v.length > finalOpts.maxStringLength) {
+                reportError(
+                    `string truncated: ${v.length} -> ${finalOpts.maxStringLength} chars`,
+                    path,
+                );
                 return v.slice(0, finalOpts.maxStringLength)
                     + ph.truncatedStringSuffix(v.length - finalOpts.maxStringLength);
             }
@@ -33,7 +37,10 @@ function serialize(value, opts) {
         if (t === 'symbol') return ph.symbolPlaceholder(v);
         if (t === 'function') return ph.fnPlaceholder(v);
 
-        if (depth >= finalOpts.maxDepth) return ph.maxDepthPlaceholder();
+        if (depth >= finalOpts.maxDepth) {
+            reportError(`max depth ${finalOpts.maxDepth} exceeded`, path);
+            return ph.maxDepthPlaceholder();
+        }
 
         if (seen.has(v)) return ph.circularPlaceholder(seen.get(v));
 
@@ -41,7 +48,10 @@ function serialize(value, opts) {
             if (v instanceof Date) return ad.adaptDate(v);
             if (ad.isError(v)) return ad.adaptError(v, (x) => walk(x, depth + 1, path + '.cause'));
             if (v instanceof RegExp) return ad.adaptRegExp(v);
-            if (ad.isBuffer(v) || ad.isArrayBuffer(v)) return ph.bufferPlaceholder(v);
+            if (ad.isBuffer(v) || ad.isArrayBuffer(v)) {
+                // IPC 路径原样透传（structured clone 原生支持）；日志路径换占位符
+                return finalOpts.binaryPassthrough ? v : ph.bufferPlaceholder(v);
+            }
             if (ad.isPromise(v)) return ph.promisePlaceholder();
             if (typeof WeakMap !== 'undefined' && v instanceof WeakMap) return ph.weakMapPlaceholder();
             if (typeof WeakSet !== 'undefined' && v instanceof WeakSet) return ph.weakSetPlaceholder();
@@ -70,6 +80,9 @@ function serialize(value, opts) {
         }
 
         if (ad.isTypedArray(v)) {
+            // 同二进制：IPC 路径透传。展开成 number[] 会撞 maxArrayLength、
+            // 把几 MB 的数据截成 1000 项 —— 对 IPC 是纯损坏
+            if (finalOpts.binaryPassthrough) return v;
             return walkArray(Array.from(v), depth, path);
         }
 
@@ -95,6 +108,7 @@ function serialize(value, opts) {
             out.push(walk(item, depth + 1, `${path}[${i}]`));
         }
         if (arr.length > limit) {
+            reportError(`array truncated: ${arr.length} -> ${limit} items`, path);
             out.push(ph.truncatedArrayItem(arr.length - limit));
         }
         return out;
@@ -126,6 +140,7 @@ function serialize(value, opts) {
             out[key] = walk(val, depth + 1, `${path}.${key}`);
         }
         if (keys.length > limit) {
+            reportError(`keys truncated: ${keys.length} -> ${limit} keys`, path);
             out.__truncated = ph.truncatedKeysValue(keys.length - limit);
         }
         return out;
@@ -151,14 +166,48 @@ function safeStringify(value, opts) {
 }
 
 /**
- * IPC 专用序列化封装：硬编码 strict: false，保证生产环境 IPC 路径永不抛错。
- * 主端与 preload 的所有 IPC 序列化调用点统一使用此函数。
+ * IPC 专用序列化封装。主端与 preload 的所有 IPC 序列化调用点统一使用此函数。
+ *
+ * ## 它**不做大小裁剪、也不动二进制** —— 这是 2026-10-10 定的
+ *
+ * 本函数原先只传 `strict: false`，于是套用了 safeStringify 那套面向**日志可读性**的默认值
+ * （`maxStringLength: 10240` 等），后果是**业务数据在 IPC 上被静默裁剪**：
+ *
+ * - 问卷 `paperJson`（实测 13891 字符）被截成 10240 + 占位符，写进本地缓存后
+ *   下次读出 `JSON.parse` 必失败 —— 而失败发生在业务侧，报的是"获取工具失败"这种
+ *   与真因无关的文案。业务侧反复重试无效（重试仍命中同一份坏缓存）。
+ * - `Buffer` / `ArrayBuffer` 被换成字符串占位符、`TypedArray` 被展开成数组后撞
+ *   `maxArrayLength` —— **二进制在 IPC 上根本无法传输**，而这是纯损失：
+ *   Electron 的 structured clone 原生支持它们（实测 3MB `Uint8Array`、2MB `ArrayBuffer`、
+ *   5MB 字符串全部完整到达，首尾字节校验通过）。
+ *
+ * 所以 IPC 路径只保留"真正不可克隆"的处理（函数、DOM、window、Promise、WeakMap、
+ * 循环引用），**不再裁剪、不再改二进制**。裁剪与占位是 safeStringify 的职责，
+ * 那是"给人看"的需求，不该出现在数据通道上。
+ *
+ * `onError` 仍由调用方通过 `configureSerializer` 设置 —— 裁剪虽然不再发生，
+ * 但不可克隆对象的占位仍需上报（见 service/preload.js 的接线）。
  *
  * @param {*} value 任意值
- * @returns {*} plain 数据（JSON-safe）
+ * @returns {*} 可直接过 IPC 的值
  */
-function serializeForIpc(value) {
-    return serialize(value, { strict: false });
+function serializeForIpc(value, opts) {
+    return serialize(value, {
+        strict: false,
+        maxStringLength: Infinity,
+        maxArrayLength: Infinity,
+        maxKeys: Infinity,
+        binaryPassthrough: true,
+        // 调用方可按次传入 onError 覆盖全局默认（Service 的 preload 侧用它按调用收集，
+        // 以便把出问题的参数下标与通道名一并上报）。不传则回落到 globalDefaults
+        ...(opts || {}),
+        // **maxDepth 刻意不给 Infinity** —— 深度是唯一会威胁调用栈的维度：
+        // 无上限时深嵌套（实测 ≥3000 层）会爆栈，而顶层 catch 会把异常吞成一个
+        // 占位字符串，**整个对象静默变成一行文字** —— 比截断更严重的全量丢失。
+        // 实测：3000 层 → `[Unserializable: SerializeError: Maximum call stack size exceeded]`。
+        // 而深度从来不是本次缺陷的成因（那是字符串长度），所以保留默认的有限值，
+        // 超限时经 reportError 上报、不再静默。
+    });
 }
 
 module.exports = { serialize, safeStringify, configureSerializer, serializeForIpc };

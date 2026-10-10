@@ -21,13 +21,30 @@ describe('T-10 real-world: capability/downloader resolve value (Windows path str
 });
 
 describe('T-10 real-world: capability/os Buffer return value', () => {
-    it('execSync 返回的 Buffer 变 placeholder, IPC 无损', () => {
-        // linuxCore / linuxArch / lsbRelease 在 Linux 上返回 Buffer
+    // 2026-10-10 契约变更：**IPC 路径不再把二进制换成占位符**。
+    // 原先断言"Buffer 变 placeholder、能过 JSON.stringify" —— 那条基准把 JSON 当成了
+    // IPC 的保真标准，但 IPC 实际走 structured clone（原生支持 Buffer / ArrayBuffer /
+    // TypedArray，实测 3MB Uint8Array 首尾字节完整）。占位符化是纯损失：
+    // 业务侧的二进制经 Service 根本传不过去。
+    // 裁剪与占位保留给 safeStringify（日志/诊断用途），那才是"给人看"的需求。
+    it('execSync 返回的 Buffer 原样透传，不被换成 placeholder', () => {
         const buf = Buffer.from('5.15.0-91-generic\n', 'utf-8');
         const out = serializeForIpc(buf);
-        expect(typeof out).toBe('string');
-        expect(out).toMatch(/^\[Buffer:\s*\d+\s*bytes\]$/);
-        expect(() => JSON.stringify(out)).not.toThrow();
+        expect(Buffer.isBuffer(out)).toBe(true);
+        expect(out.equals(buf)).toBe(true);
+    });
+
+    it('ArrayBuffer / TypedArray 同样透传', () => {
+        const ab = new ArrayBuffer(8);
+        expect(serializeForIpc(ab) instanceof ArrayBuffer).toBe(true);
+        const out = serializeForIpc(new Uint8Array([1, 2, 3]));
+        expect(out instanceof Uint8Array).toBe(true);
+        expect(Array.from(out)).toEqual([1, 2, 3]);
+    });
+
+    it('但 safeStringify（日志用途）仍把二进制换成 placeholder', () => {
+        const { safeStringify } = require('../../../src/shared/serializer/index.js');
+        expect(safeStringify(Buffer.from('abc'))).toMatch(/\[Buffer:\s*3\s*bytes\]/);
     });
 });
 
@@ -208,8 +225,13 @@ describe('T-10 edge: frozen / sealed objects', () => {
 });
 
 describe('T-10 real-world: IPC round-trip integrity guarantee', () => {
-    // 综合验证：一个"最坏组合"对象过一遍 serializeForIpc → JSON.stringify → JSON.parse，不抛错
-    it('worst-case business object survives serializeForIpc + JSON roundtrip', () => {
+    // 综合验证：一个"最坏组合"对象过一遍 serializeForIpc。
+    //
+    // 2026-10-10 契约变更：基准从「能过 JSON.stringify」改为 **structured clone 语义**
+    // —— IPC 实际走的就是它。JSON 基准会逼着二进制降级成占位符，而那正是本次要修的
+    // 缺陷（业务侧的 Buffer 经 Service 传不过去）。现在：**可克隆的原样透传，
+    // 不可克隆的才降级成占位符**。
+    it('worst-case business object survives serializeForIpc with clone semantics', () => {
         const beast = {
             path: 'C:\\Users\\me\\Downloads\\pkg.asar',
             buffer: Buffer.from('binary content'),
@@ -231,14 +253,24 @@ describe('T-10 real-world: IPC round-trip integrity guarantee', () => {
         beast.circular.self = beast.circular;
 
         const out = serializeForIpc(beast);
-        expect(() => JSON.stringify(out)).not.toThrow();
-        const revived = JSON.parse(JSON.stringify(out));
-        // 结构存活
-        expect(revived.path).toBe(beast.path);
-        expect(revived.unicode).toBe('张三 🎉');
-        expect(revived.date).toBe('2026-07-09T00:00:00.000Z');
-        expect(typeof revived.buffer).toBe('string'); // placeholder
-        expect(revived.error.message).toBe('boom');
-        expect(revived.error.code).toBe('EIO');
+
+        // —— 可克隆的：原样保真 ——
+        expect(Buffer.isBuffer(out.buffer)).toBe(true);
+        expect(out.buffer.toString()).toBe('binary content');
+        expect(out.path).toBe(beast.path);
+        expect(out.unicode).toBe('张三 🎉');
+        expect(out.frozen).toEqual({ x: 1 });
+
+        // —— 结构被适配成 plain 数据（这层是刻意的，见各自 adapter/placeholder）——
+        expect(out.date).toBe('2026-07-09T00:00:00.000Z');
+        expect(out.error.message).toBe('boom');
+        expect(out.error.code).toBe('EIO');
+
+        // —— 不可克隆的：降级成占位符，且不抛 ——
+        expect(typeof out.fn).toBe('string');
+        expect(typeof out.sym).toBe('string');
+        expect(typeof out.big).toBe('string');
+        expect(typeof out.circular.self).toBe('string'); // [Circular: …]
+        expect(out.nully).toBe(null);
     });
 });
