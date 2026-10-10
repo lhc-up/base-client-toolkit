@@ -164,9 +164,84 @@ capability 特殊约束：必须至少导出一个 schema，否则无法暴露�
 
 不做 build 步骤：源码是合法 CJS，peer 依赖由 runtime 解析。`package.json` 无 `build` 脚本，`"files": ["src"]` 只发布 src，测试在包外天然排除。若未来需要 TS / tree-shaking / 混淆，走架构 review 重新决策。
 
-### 8.3 peer 依赖版本反推
+### 8.3 Electron 版本范围决定 Node 约束，不是反推
 
-`peerDependencies` 版本范围必须根据实际使用的 API 特性反推：API 用到什么、版本范围就从那个版本起。当前 `electron: ">=15.0.0"`（底线来自 `err.cause`，ES2022 / Node 16）。
+**方向是「声明 → 下界 → 约束代码」，不是「代码 → 反推声明」。**
+
+本节原先写的是后者（"版本范围必须根据实际使用的 API 特性反推"），那是错的，有两层问题：
+反推只能描述现状、约束不了任何新增代码；而且它自己就算错了 —— 原文由 `err.cause`
+反推出 `electron: ">=15.0.0"`，但 `new Error(msg, { cause })` 是 **Node 16.9+**，
+而 Electron 15 的内置 Node 是 **16.5**，根本没有它。声明比代码更宽，等于没约束。
+
+正确的链条：
+
+```
+peerDependencies.electron（人决定，闭区间）
+      ↓ 查 Electron → 内置 Node 映射
+Node 区间（纯导出值，可实测核对 process.versions.node）
+      ↓ 作为硬约束施加于 src/main
+代码只能用该区间的公共子集
+```
+
+**当前声明：`electron: ">=22 <29"`**，对应 Node 区间：
+
+| 端 | Electron | 内置 Node | 约束 |
+|---|---|---|---|
+| 下界 | 22 | **16.17**（已实测 `process.versions.node`，与 electron-vite 的映射表一致） | 不得使用引入版本高于 16.17 的 API |
+| 上界 | 28 | **18.18** | 不得使用在 18.18 已被移除 / 改语义的 API |
+
+**为什么是闭区间**：开放式 `>=` 的上界不可验证 —— 无法对尚不存在的 Node 做兼容检查，
+声明了就是空头承诺。本文件其余五个 peer（`sudo-prompt` / `download` / `electron-store` /
+`log4js` / `semver`）本来都是闭区间，electron 此前是唯一的破例。
+另一个收益：区间越窄，可用 API 的交集越大 —— 从跨 8 个 Node 大版本缩到 2 个。
+
+**扩大范围是一次显式决定**：要支持 Electron 29+ 必须改本节与 `peerDependencies`，
+并重新核对两端约束，而不是靠开放式声明被动"自动支持"一批没验过的版本。
+
+**⚠️ 当前语法与 API 两类都没有机器强制**，全靠人工遵守。原因是本包**没有构建步骤**
+（见 8.2，直接发布 `src/`），所以这一侧既没有编译器也没有 linter：
+
+| 类别 | 原理上编译期能挡吗 | 现状 | 暴露时机 |
+|---|---|---|---|
+| 语法（`??=`、顶层 await） | 能（node target / es-check） | 无 | 各消费者编译时，较早 |
+| API（`structuredClone`、`fsp.cp`、`Object.hasOwn`） | **永远不能** —— 运行时全局/方法，webpack 原样输出 | 无 | **用户机器运行时**，最晚 |
+
+两点放大了后果：① 直接发布 src 意味着两类问题都原样传给每个消费者；
+② 本包测试跑在开发机 Node（18+）上，高版本 API 在那里完全可用、**测试照样全绿**。
+
+**已落地的机制**：`eslint.config.js` 用 `eslint-plugin-n` 的四条规则
+（`no-unsupported-features/{es-syntax,node-builtins,es-builtins}` 传入下界 +
+`no-deprecated-api` 管上界）同时覆盖语法与 API 两类，不需要再叠 es-check 或构建。
+`npm run lint` 执行，并挂在 `prepublishOnly` 上。
+
+三条约束写在那个配置里、此处不复制（避免两处漂移），只记要点：
+
+- **下界由本节的 peer 范围算出**，不手填。放宽 peer 时必须同时补映射表并实测
+  `process.versions.node`，否则配置会直接抛错而非静默取错值
+- **`version` 刻意不读 `engines.node`** —— 后者表达**开发工具链**要求（当前由 eslint 10
+  的 `^20.19 || ^22.13 || >=24` 顶到 20.19，高于 vitest 2 的 18），与运行时下界是两个
+  不同的数字；读错会放过 16.17 ~ 20 之间的全部 API
+- **必须带 Node 全局表**（复用插件 `flat/recommended-script` 的 `languageOptions`）。
+  实测不带时 `structuredClone` 被当未声明变量、**静默漏过**，而漏的恰好是最该抓的
+  运行时全局那类
+
+**仍未覆盖的两类**（lint 与构建都管不了，只有在目标环境真跑才行）：
+
+- **依赖内部的用法** —— eslint 不检查 `node_modules`。`archiver` / `unzipper` 内部若用了
+  高于下界的 API，两道闸都看不见
+- **非语法非 API 的环境差异** —— OpenSSL provider、DNS 解析顺序、原生模块 ABI。
+  当前暴露面小（SM4 是纯 JS 自实现、只用 sha256、`src` 无原生模块），但 optional peer
+  中的 `@vscode/sudo-prompt` / `electron-store` 可能带原生码
+
+终局形态是**在 Electron（内置 Node 即为下界）里跑测试**，保真度最高且能覆盖上述两类；
+引入 Electron 测试环境是独立工程，未排期。
+
+唯一可靠的机制是版本感知的静态检查（`eslint-plugin-n` 的
+`no-unsupported-features/{node-builtins,es-builtins,es-syntax}` 传入下界 +
+`no-deprecated-api` 管上界），且 `version` 必须**显式传下界**、不能让它读 `engines.node`
+—— 那个字段表达的是**开发工具链**的要求（测试用的 vite / vitest 要 Node 18+），
+与运行时下界是两个不同的数字；读错就会放过 16.17 ~ 18 之间的全部 API。
+尚未落地，属已知缺口。
 
 ### 8.4 注释与 JSDoc 规范
 

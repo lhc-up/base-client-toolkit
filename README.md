@@ -4,6 +4,42 @@
 
 包边界为显式子路径导出，**没有根聚合入口**（`require('@base-client/toolkit')` 不可解析）。
 
+## 环境要求 —— 两个不同的 Node 版本，别混
+
+| | 数字 | 由谁决定 | 载体 |
+|---|---|---|---|
+| **运行时** | **Node 16.17**（下界） | 宿主 Electron 的内置 Node。`peerDependencies.electron` 当前为 `>=22 <29`，Electron 22 内置 16.17（已实测 `process.versions.node`） | `peerDependencies.electron` |
+| **开发 / 测试** | **Node 20.19+**（见 `engines`） | 本仓工具链。当前由 eslint 10 的 `^20.19.0 \|\| ^22.13.0 \|\| >=24` 顶上去，高于 vitest 2 的 `^18 \|\| >=20` | `engines.node` + `.nvmrc` |
+
+**本包代码本身从不运行在独立 Node 上** —— 它运行在 Electron 主进程里，所以运行时版本是
+Electron 版本的导出结果，不由 `engines` 表达。`engines` 只管「要在本仓干活、跑 lint 和
+测试，你的 Node 得是多少」。
+
+```bash
+nvm use            # 读 .nvmrc（22.15.1，实测通过 lint + 测试的版本）
+npm install
+npm run lint       # 版本兼容检查，详见下
+npm test
+```
+
+> ⚠️ 在低于 `engines` 的 Node（如 16.x）上，`npm test` 与 `npm run lint` **都起不来**，
+> 且报的是 `crypto$2.getRandomValues is not a function` 这类与版本八竿子打不着的错。
+> 看到它先查 `node -v`。
+
+### 运行时版本约束怎么被强制
+
+`npm run lint` 用 `eslint-plugin-n` 的四条规则，把**运行时下界**施加于 `src/`：
+语法（`es-syntax`）、语言层全局（`es-builtins`）、Node 内置模块与方法（`node-builtins`），
+外加 `no-deprecated-api` 管上界。
+
+下界**不手填**，由 `eslint.config.js` 从 `peerDependencies.electron` 算出 ——
+改 peer 范围，约束自动跟着走。放宽到映射表外的 Electron 版本时配置会直接抛错，
+提示必须补表并实测。
+
+**两类仍未覆盖**：依赖内部的用法（eslint 不查 `node_modules`）、
+非语法非 API 的环境差异（OpenSSL provider、原生模块 ABI）。
+详见 `docs/design/architecture.md` §8.3。
+
 ## 包边界
 
 | 子路径 | 进程 | 说明 |
