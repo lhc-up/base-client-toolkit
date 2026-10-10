@@ -1,6 +1,7 @@
 /**
  * 平台检测与系统信息工具（Windows / Linux / macOS / Loongnix 等）。
  */
+const os = require('os');
 const { execSync } = require('child_process');
 const logger = require('./logger');
 
