@@ -50,8 +50,8 @@ const serviceSchema = {
         getFile: store.getFile,
         removeFile: store.removeFile,
     },
-    // 只有 get 开同步别名，理由与代价见文件头
-    sync: ['get'],
+    // `get` 与 `getFile` 开同步别名，理由与代价见文件头
+    sync: ['get', 'getFile'],
 };
 
 module.exports = {
