@@ -71,7 +71,39 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `sm4` | 目录 | SM4-CBC 标准实现，Node crypto 风格 API（流式/非流式） |
 | `scope` | 目录 | 受控 scope 规则：`/` 字符串或段数组规范化、逃逸拒绝、纯 fileName 校验 |
 | `logger` | 文件 | log4js 封装，六级方法 + `print` + `shutdown`。顶层即 `configure`、无 init。**契约：六级方法与 `shutdown` 永不抛**，失败走 `console.error` 次级通道自报并丢弃该条 —— 写日志不得影响主流程，调用方（尤其经 Service 跨进程的渲染层）可放心 fire-and-forget。要覆盖日志目录须在 require 本模块**之前**调 `setPathConfig({ log })` |
-| `os`、`shortcut`、`singleInstance`、`store` | 文件 | 系统信息、全局热键、单实例、持久存储 |
+| `store` | 文件 | **持久存储，两类分开用**（详见下方小节） |
+| `os`、`shortcut`、`singleInstance` | 文件 | 系统信息、全局热键、单实例 |
+
+### store：两类存储，别混用
+
+```js
+const store = require('@base-client/toolkit/main/libs/store');
+```
+
+| | API | 落点 | 适用 |
+|---|---|---|---|
+| **值存储** | `set(key, value)` / `get(key)` / `remove(key)` | `{store}/__store__.json` | 小而结构化、整体读写（窗口位置、用户偏好）。支持点路径嵌套 `a.b.c` |
+| **文件存储** | `await setFile(key, value)` / `await getFile(key)` / `await removeFile(key)` | `{store}/files/` | 大块、互不相关、独立读写（答案草稿、过程性文件）。**只有它支持二进制** |
+
+**值存储的 `get` 是同步的** —— 这是它的核心价值之一，可以服务那些必须同步返回的旧契约。
+代价是每次 `get` 都读 + 解析整份 JSON（实测约 196 µs，随文件增大变慢），
+**所以不要往里放大块数据或做高频读取**。`set` 每次同步写盘（实测约 5.58 ms）。
+
+**文件存储的三条约定**：
+
+- `setFile` 的 `value`：`Buffer` / `TypedArray` / `ArrayBuffer` **原样写**；字符串按 utf8 写；
+  其余 `JSON.stringify` 后写。`null` / `undefined` 直接抛。
+- `getFile` **返回 `Buffer`，不替调用方解码**（不存在时为 `null`）。只有调用方知道自己存的是
+  JSON、文本还是二进制；统一 `.toString()` 会把二进制静默损坏。要文本就 `buf.toString()`，
+  要 Blob 就 `new Blob([buf])`。
+- `key` 必须是**纯文件名**（经 `scope.normalizeFileName` 校验，拒绝 `..`、路径分隔符、`\0`）。
+  落点刻意放 `files/` 子目录而非 `{store}` 根 —— `key` 常来自外部（下载来的插件、题包、
+  服务端下发的文件名），同级存放意味着一次普通写入就能覆盖掉 `__store__.json`。
+  需要把这个目录交给协议白名单一类场景，用导出的 `fileDir`。
+
+> ⚠️ **文件存储的三个方法曾是同步的、且存不了二进制**（`JSON.stringify` + `.toString()`，
+> 落点在 `{store}` 根）。现已改为异步 + 二进制直写 + 子目录，**对应调用方需要 `await`、
+> 返回类型由 `string` 变 `Buffer`，旧位置的遗留文件不会被读到**。
 
 ## Capability（`/main/capability/*`）
 

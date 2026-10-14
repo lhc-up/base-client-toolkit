@@ -19,7 +19,7 @@ describe('capability aggregate optional peers', () => {
                 return originalLoad.call(this, request, parent, isMain);
             };
             const capability = require(${JSON.stringify(capabilityPath)});
-            const expected = ['archive', 'download', 'example', 'update'];
+            const expected = ['archive', 'download', 'example', 'store', 'update'];
             if (JSON.stringify(Object.keys(capability).sort()) !== JSON.stringify(expected)) process.exit(2);
         `;
 
