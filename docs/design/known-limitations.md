@@ -148,6 +148,56 @@
     饿加载会破坏「严格按需引入」）；若认为「无根聚合入口」是不可让的包边界，则只做 ①②。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
 
+- **`capability/update` 的 `downloadPkg` 用 npm `download` 包，与自家 `libs/download` 构成两套实现，
+  且该包被顶层 require、`optional` 名不副实**：`capability/update/index.js:8` 是
+  `const download = require('download')`，`createUpdateCapability.js:104` 用它下载 `.asax`
+  （`await download(url, updatePackageDir, { filename })`）。三个问题叠加：
+  - **① 同一件事两套实现**：toolkit 已有 `libs/download`（Electron `net.request` +
+    `stream/promises` 的 pipeline，带进度回调、取消、多 URL fallback、临时文件原子晋升），
+    `capability/download` 即其薄封装；而 `downloadPkg` 另走 npm `download@8`
+    （2019 年的包、底层 `got@9`）。**后者能力更弱——没有进度回调**，
+    所以 `downloadPkg` 下载增量包时调用方画不出进度。
+  - **② `optional` 名不副实**：`download` 在 `peerDependenciesMeta` 标了 `optional: true`，
+    但那是**顶层 require**——不装它，`require('@base-client/toolkit/main/capability/update')`
+    加载即抛，整个 capability 不可用。**与下面 `log4js` 那条同型**（Service 直接 require
+    logger，只要用 Service 就必装 log4js）。
+  - **③ 代价（业务侧实测）**：消费方只用 `installApp`、完全不用 `downloadPkg` 时，
+    仍被迫 `npm i download` —— 实测带进 **111 个包**、main 产物 **+0.7 MB**
+    （与 `@vscode/sudo-prompt` 合计）、并新增 1 条
+    `Critical dependency: the request of a dependency is an expression`
+    （已用最小 entry 分别打包归因到该包：`libs/logger` 单独 2 条、npm `download` 单独 1 条、
+    `capability/download` 0 条、`capability/update` 3 条 = 2 + 1）。
+  - **建议（业务侧首选①）**：① **让 `downloadPkg` 改用自家 `libs/download`**，
+    消掉这套重复实现与整个 npm 依赖，顺带把进度回调带给增量包下载；
+    ② 若短期保留该包，**至少把那行改成惰性加载** —— `shared/loadOptionalPeer.js` 现成且
+    正为此而设（`capability/update` 自己已经用它加载 `@vscode/sudo-prompt`），
+    这样只用 `installApp` 的消费者不必安装，同时能消掉那条 Critical dependency warning。
+  - 消费方回收动作：上游按 ① 或 ② 改后，从业务 `package.json` 删 `download`，
+    复核 main 产物体积与 warning 数。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-16）。
+
+- **`capability/update` 的 `installApp` 自带退出，而它用的 `quitApp()` 违反了 `libs/logger`
+  自己写明的契约**：`createUpdateCapability.js:259-262` 是
+  `logger.shutdown(); schedule(() => app.exit(1), 500)` —— **丢掉了 `shutdown()` 返回的
+  Promise，改用盲等 500 ms**，且 `app.exit` 会跳过 `will-quit`。
+  - **证据在 toolkit 内部**：`main/libs/logger.js` 的 `shutdown` 注释给了实测对照表
+    （裸调不拦退出 **2/2000**；`preventDefault()` + 等 resolve **2000/2000**），
+    并结论「`will-quit` 里必须 `preventDefault()` 并 await 本函数」。
+    即 `capability/update` 用了 `libs/logger` 却没遵守它的使用说明。
+  - **与已修的 UP-8 同源**：`shutdown` 改返回 Promise 后（`45c02e5`），
+    这个调用点**没有跟上**，仍停在旧的盲等写法。
+  - **后果**：大版本安装是最需要日志的路径之一（升级失败要排查），却恰好是日志最易丢的路径；
+    `app.exit` 还会跳过消费方挂在 `will-quit` 上的全部收尾编排。
+  - **建议**：`quitApp` 改为 `await logger.shutdown()` 再 `app.exit`；更好的做法是
+    **把退出决定权交给调用方**（如 `installApp(filePath, { quitAfter = true })`），
+    让有自己退出编排的业务能走 `app.quit()` 而不是被强制 `exit`。
+  - 消费方现状：业务侧已绕行 —— 在调 `installApp` 之前先 `await` 自己的日志 flush。
+    但 `installApp` 自身那条「执行大版本安装文件」、以及失败分支
+    （`dialog.showErrorBox` + `started:false`）的日志仍进不了文件；
+    Linux 的 `installDebOnLinux`（xdg-open → dpkg → Loongnix xterm，最耗时也最易失败）
+    整段都在静默区。上游修好后该绕行可回收。
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-16）。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
