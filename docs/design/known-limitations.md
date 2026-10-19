@@ -235,6 +235,46 @@
     建议统一成只判退出码，stderr 交给 logger。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-16）。
 
+- **`serializeForIpc` 仍在降级一批 structured clone 原生支持的类型，与它自己写下的
+  原则不一致。** 2026-10-10 修二进制时，`src/shared/serializer/index.js` 的文件头已经
+  立好了判据 ——「裁剪与占位是 `safeStringify` 的职责，那是『给人看』的需求，
+  **不该出现在数据通道上**」。那次只把这条原则应用到了 `Buffer` / `ArrayBuffer`
+  （加 `binaryPassthrough`），**剩下的类型漏了**：
+
+  | 类型 | 当前被改成 | 有解码器吗 |
+  |---|---|---|
+  | `Date`（`adaptDate`） | ISO 字符串（`Invalid Date` → `null`） | ❌ |
+  | `RegExp`（`adaptRegExp`） | `{ source, flags }` | ❌ |
+  | `Map`（`adaptMap`） | 全字符串键时变 plain 对象，否则变 entry 数组 | ❌ |
+  | `Set`（`adaptSet`） | 数组 | ❌ |
+  | `BigInt`（`bigintPlaceholder`） | `"[BigInt: 123]"` 字符串 | ❌ |
+  | `NaN` / `±Infinity`（`numberPlaceholder`） | `"[Number: NaN]"` 等字符串 | ❌ |
+
+  **这六类都是纯损失**：Electron 的 structured clone 原生支持它们，而接收端拿到的是
+  另一种类型，且没有任何还原路径。`NaN` / `±Infinity` 这条尤其隐蔽 ——
+  它不需要业务刻意传特殊类型，**任何一次算出 `NaN` 的普通数值运算**（除零、
+  `parseInt` 失败、`undefined` 参与运算）过一趟 IPC 就变成字符串，
+  下游的 `typeof === 'number'` / `Number.isNaN()` 判断随之全部失效。
+
+  **`Error` 不在此列，不要顺手一起改**：它走的是 `adaptError` →
+  `service/preload.js` 的 `reviveError` **成对的编解码**，接收端拿到的是重建好的
+  真 `Error` 实例（`name` / `message` / `stack` / `code` / `cause` 都还原），
+  属有意设计而非降级。
+
+  **建议的修法就照 `binaryPassthrough` 的既有范式**：在 `limits.js` 的
+  `globalDefaults` 加一个开关（默认 `false`）、`index.js` 的对应分支读它，
+  `serializeForIpc` 置 `true`；`safeStringify`（日志路径）**保持现状不动** ——
+  那里把 `Date` 变可读字符串正是需求。改完后 IPC 路径只剩「真正不可克隆」的处理
+  （函数、DOM、window、Promise、WeakMap、循环引用），与文件头的原则完全自洽。
+
+  **影响面提示**：这会改变 IPC 上的实际类型，消费方若已经依赖「收到的 `Date` 是
+  字符串」就会受影响。提出方项目 2026-10-19 已逐一核过自己的消费面
+  （所有 capability handler 的返回值、Notice 载荷、渲染层传入的参数）
+  —— **当前零暴露**，这六类一个都没真的过 IPC，故对它不构成破坏性变更；
+  但其他消费者需各自确认。
+
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-19）。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
