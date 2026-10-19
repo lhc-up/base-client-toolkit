@@ -3,7 +3,7 @@ function createUpdateCapability(deps) {
         path,
         fse,
         semver,
-        download,
+        startDownload,
         randomUUID,
         createHash,
         execFile,
@@ -82,8 +82,39 @@ function createUpdateCapability(deps) {
         return finalPath;
     }
 
+    /**
+     * 下载 `.asax` 增量包并原子晋升成 `.asar`。
+     *
+     * **下载底座用自家 `libs/download`，不是 npm `download`**（2026-10-19 换掉）：
+     * 后者是 2019 年的包（底层 `got@9`）、**没有进度回调**，于是调用方画不出进度条；
+     * 而本库自己的 `libs/download` 走 Electron `net.request`，有 `onProgress`、
+     * 支持多 URL fallback、临时文件原子晋升，并且**尊重 Chromium 的代理设置**
+     * （考场环境常有透明代理）。两套下载实现并存本就是个缺陷，此处收敛掉。
+     *
+     * @param {object} option
+     * @param {string} option.url `.asax` 包地址
+     * @param {string} [option.integrity] `sha256-<hex>` 或 64 位 hex；给了才校验
+     * ## 为什么这里要自己兜一层整体超时
+     *
+     * **换底座带来一个必须补回的行为**：npm `download@8`（底层 `got`）的 `timeout.request`
+     * 覆盖**整个请求周期**，而 `libs/download` 的 `timeoutMs` **只覆盖"等响应头"那一段**
+     * （`createElectronNetTransport` 在 `response` 回调里就 `cleanup()` 清了 timer，
+     * 随后的 pipeline 不再受任何时限约束，也没有 stall 检测 —— 本库 known-limitations
+     * 已登记该缺口）。不补的话，服务端发完响应头再卡住（弱网、中间代理、服务端半挂）
+     * 就是 **`promise` 永不 settle、调用方永久挂起**，对升级流程意味着卡在进度条上出不来。
+     *
+     * 故在此用 `Promise.race` + `cancel()` 兜一个**整体**上限，与被替换掉的 npm
+     * `download@8` 行为对齐。**真正的修法在 `libs/download`**（给 pipeline 阶段加 stall
+     * 超时），上游修好后这层可以删掉。
+     *
+     * @param {(p: {transferred: number, total?: number, percent?: number}) => void} [option.onProgress]
+     *        下载进度回调。**只在主进程内调用**，不跨 IPC；调用方自行节流
+     * @param {number} [option.timeoutMs=600000] 整个下载任务的上限，超时即 `cancel()` 并抛。
+     *        默认 10 分钟：增量包比资源文件大（实测业务侧 14.6 MB），按慢速 50 KB/s
+     *        约需 5 分钟，留一倍余量。调用方可按部署环境覆盖
+     */
     async function downloadPkg(option = {}) {
-        const { url, integrity } = option;
+        const { url, integrity, onProgress, timeoutMs = 600000 } = option;
         if (typeof url !== 'string' || !url) {
             throw new TypeError('update.downloadPkg url 不能为空');
         }
@@ -100,13 +131,26 @@ function createUpdateCapability(deps) {
 
         const { tempPath, finalPath } = getPackagePaths(sourceName);
 
+        let timer;
         try {
-            await download(url, updatePackageDir, { filename: path.basename(tempPath) });
+            const task = startDownload({ urls: [url], destinationPath: tempPath, onProgress });
+            await Promise.race([
+                task.promise,
+                new Promise((_, reject) => {
+                    timer = schedule(() => {
+                        task.cancel();
+                        reject(new Error(`update.downloadPkg 整体超时（${timeoutMs}ms）`));
+                    }, timeoutMs);
+                }),
+            ]);
             return promoteTempPackage({ tempPath, finalPath, integrity });
         } catch (err) {
             try { fse.removeSync(tempPath); } catch { /* best effort */ }
             logger.error(err);
             throw err;
+        } finally {
+            // 必须清：下载正常结束后若让它烧到点，会对一个已完成的 task 调 cancel()
+            if (timer !== undefined) clearTimeout(timer);
         }
     }
 

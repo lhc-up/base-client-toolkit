@@ -148,8 +148,16 @@
     饿加载会破坏「严格按需引入」）；若认为「无根聚合入口」是不可让的包边界，则只做 ①②。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
 
-- **`capability/update` 的 `downloadPkg` 用 npm `download` 包，与自家 `libs/download` 构成两套实现，
-  且该包被顶层 require、`optional` 名不副实**：`capability/update/index.js:8` 是
+- ~~**`capability/update` 的 `downloadPkg` 用 npm `download` 包，与自家 `libs/download` 构成两套实现，
+  且该包被顶层 require、`optional` 名不副实**~~ ✅ **2026-10-19 已修（按本条建议①）**：
+  `downloadPkg` 的下载底座换成自家 `libs/download`、新增 `onProgress` 透传，
+  **npm `download` 整个移除**（`peerDependencies` / `peerDependenciesMeta` /
+  `devDependencies` 三处都删了）。三个子问题一次全消：① 两套实现收敛成一套；
+  ② 那个"名不副实的 optional"随包移除而不存在了；③ 消费方不再为只用 `installApp`
+  被迫装 111 个包。`createUpdateCapability` 的注入依赖由 `download` 改为
+  `startDownload`（即 `createDownload().start`），测试同步更新并补了一条
+  "onProgress 被透传"的用例（全量 **55 文件 / 494 测试通过**）。
+  **以下为修复前的原始记录，保留备查**：`capability/update/index.js:8` 是
   `const download = require('download')`，`createUpdateCapability.js:104` 用它下载 `.asax`
   （`await download(url, updatePackageDir, { filename })`）。三个问题叠加：
   - **① 同一件事两套实现**：toolkit 已有 `libs/download`（Electron `net.request` +
@@ -283,7 +291,7 @@
   |---|---|---|
   | `log4js` | `main/libs/logger.js:20` **顶层 require**，且 `:30` 顶层 `log4js.configure` | ❌ |
   | `electron-store` | `main/libs/store.js:47` **顶层 require**，且 `:48` 顶层 `new Store` | ❌ |
-  | `download` | `main/capability/update/index.js:8` **顶层 require** | ❌ |
+  | ~~`download`~~ | ~~顶层 require~~ —— **2026-10-19 整包移除**（见上条），本行已不适用 | — |
   | `semver` | `main/capability/update/index.js:7` **顶层 require** | ❌ |
   | `@vscode/sudo-prompt` | `index.js:33` 包成 `loadSudoPrompt`，`createUpdateCapability.js:156` **函数内**才调 | ✅ |
 
@@ -300,8 +308,9 @@
     缺了就是没有日志、没有存储，不存在有意义的降级。
     建议**去掉 `optional` 标记**（版本范围已有，`electron` 就是这么声明的现成先例），
     让缺失在安装期暴露，而不是运行期抛。
-  - `download` / `semver` —— 只服务 `capability/update`，不用这个 capability 的消费者
-    本不该被迫安装。建议改走 `loadOptionalPeer`，**保留 `optional` 并让它名副其实**。
+  - ~~`download`~~ / `semver` —— **`download` 已于 2026-10-19 整包移除**，不再是问题；
+    `semver` 只服务 `capability/update`，不用这个 capability 的消费者本不该被迫安装，
+    建议改走 `loadOptionalPeer`，**保留 `optional` 并让它名副其实**。
 
   **一个需要上游自己确认的前提**：`loadOptionalPeer` 的 `eval('require')` 在
   **打包后的应用**里能否解析（主进程被 webpack 成单文件、依赖是否随 asar 一起发出去）。

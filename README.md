@@ -162,7 +162,7 @@ archive.registerDecryptor('biz-sm4', () => sm4.createDecipheriv('SM4-CBC', key, 
 归档语义：首版只支持 ZIP；不恢复 symlink/hardlink 元数据（流式 parser 暴露为普通文件的按普通文件写入）；只校验 entry 最终解析路径不越出解压根目录；不设人为大小阈值，磁盘错误由文件系统返回；失败清理 staging 并保留旧目标目录。
 ### update capability
 
-保留既有契约。`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。
+保留既有契约。`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity?, onProgress? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。**下载底座是本库自己的 `libs/download`**（Electron `net.request`，多 URL fallback、临时文件原子晋升、尊重 Chromium 代理设置），`onProgress` 直接透传给它、载荷为 `{ transferred, total?, percent? }`；**该回调只在主进程内调用、不跨 IPC**，节流由调用方决定。2026-10-19 之前这里用的是 npm `download`（无进度回调），已整体移除。
 
 业务主进程已经取得本地增量包时，可调用 `stageLocalPkg({ sourcePath, integrity })`。该方法只接受绝对 `.asax` 路径和必填 SHA-256，先复制到 `updatePackage` 内的随机临时文件，校验成功后再替换为同名 `.asar`；失败只清理临时文件，不删除来源文件，也不会在校验前覆盖已有包。
 
@@ -178,7 +178,7 @@ toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定
 |---|---|
 | logger | `log4js` |
 | store | `electron-store` |
-| update | `semver`, `download`, `@vscode/sudo-prompt` |
+| update | `semver`, `@vscode/sudo-prompt` |
 
 **⚠️ `log4js` 声明为 optional，但实际上是必装** —— 它被 Service 直接依赖
 （`src/service/main.js` 用 toolkit 自己的 logger 记录来自 preload 的诊断上报，

@@ -32,9 +32,18 @@ function createHarness(platform = 'win32', overrides = {}) {
             },
         },
         semver: require('semver'),
-        download: async (url, dir, options) => {
-            calls.push(['download', url, dir, options]);
-            files.set(nodePath.join(dir, options.filename), Buffer.from('payload'));
+        // 注入形状随实现从 npm `download` 换成自家 libs/download 的 `start`：
+        // `start({urls, destinationPath, onProgress})` → `{promise, cancel}`
+        startDownload: ({ urls, destinationPath, onProgress }) => {
+            calls.push(['download', urls, destinationPath, typeof onProgress]);
+            return {
+                promise: (async () => {
+                    onProgress?.({ transferred: 7, total: 7, percent: 100 });
+                    files.set(destinationPath, Buffer.from('payload'));
+                    return { filePath: destinationPath, fileName: nodePath.basename(destinationPath), size: 7 };
+                })(),
+                cancel: () => true,
+            };
         },
         randomUUID: () => 'temp-id',
         createHash,
@@ -124,9 +133,9 @@ describe('capability/update package storage', () => {
         })).resolves.toBe(nodePath.join('/updates', 'prod-v1.2.0.asar'));
         expect(calls).toContainEqual(['ensureDir', '/updates']);
         expect(calls).toContainEqual(['download',
-            'https://example.test/releases/prod-v1.2.0.asax?signature=abc',
-            '/updates',
-            { filename: 'temp-id' },
+            ['https://example.test/releases/prod-v1.2.0.asax?signature=abc'],
+            nodePath.join('/updates', 'temp-id'),
+            'undefined',
         ]);
         expect(calls).toContainEqual([
             'rename',
@@ -135,12 +144,48 @@ describe('capability/update package storage', () => {
         ]);
     });
 
+    it('把 onProgress 透传给下载底座（小版本热更要画进度条）', async () => {
+        const seen = [];
+        const { calls, update } = createHarness();
+        await expect(update.downloadPkg({
+            url: 'https://example.test/a.asax',
+            onProgress: p => seen.push(p),
+        })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
+        // 底座收到的是函数，不是 undefined
+        expect(calls).toContainEqual(['download',
+            ['https://example.test/a.asax'],
+            nodePath.join('/updates', 'temp-id'),
+            'function',
+        ]);
+        expect(seen).toEqual([{ transferred: 7, total: 7, percent: 100 }]);
+    });
+
     it('下载失败时删除随机临时文件并透传异常', async () => {
         const failure = new Error('network down');
         const { calls, update } = createHarness('win32', {
-            download: async () => { throw failure; },
+            startDownload: () => ({ promise: Promise.reject(failure), cancel: () => true }),
         });
         await expect(update.downloadPkg({ url: 'https://example.test/a.asax' })).rejects.toBe(failure);
+        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
+    });
+
+    it('下载整体超时则取消任务并抛 —— 补回 npm download 被替换后丢失的整请求超时', async () => {
+        // libs/download 的 timeoutMs 只覆盖"等响应头"，body 卡住时 promise 永不 settle；
+        // 故 downloadPkg 自己用 Promise.race + cancel() 兜一个整体上限。
+        // 这里用「永不 settle 的 promise」模拟服务端发完头后半挂
+        let cancelled = false;
+        const { calls, update } = createHarness('win32', {
+            startDownload: () => ({
+                promise: new Promise(() => {}),
+                cancel: () => { cancelled = true; return true; },
+            }),
+        });
+        await expect(update.downloadPkg({
+            url: 'https://example.test/a.asax',
+            timeoutMs: 1,
+        })).rejects.toThrow(/整体超时/);
+        expect(cancelled).toBe(true);
+        // 失败路径照旧清临时文件
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 
