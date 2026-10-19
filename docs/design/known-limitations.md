@@ -275,6 +275,41 @@
 
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-19）。
 
+- **`peerDependenciesMeta.optional` 的五个声明里有四个名不副实，而正确的机制 toolkit
+  自己就有、只用在了其中一个上。** 此前 `log4js`（README 依赖表下）与 `download`
+  （本文件上一条）各自被单独记过，但那是打地鼠 —— 全量核一遍才看出这是**一条策略问题**：
+
+  | optional peer | 实际加载方式 | 声明是否名副其实 |
+  |---|---|---|
+  | `log4js` | `main/libs/logger.js:20` **顶层 require**，且 `:30` 顶层 `log4js.configure` | ❌ |
+  | `electron-store` | `main/libs/store.js:47` **顶层 require**，且 `:48` 顶层 `new Store` | ❌ |
+  | `download` | `main/capability/update/index.js:8` **顶层 require** | ❌ |
+  | `semver` | `main/capability/update/index.js:7` **顶层 require** | ❌ |
+  | `@vscode/sudo-prompt` | `index.js:33` 包成 `loadSudoPrompt`，`createUpdateCapability.js:156` **函数内**才调 | ✅ |
+
+  **四个 ❌ 的后果是一致的**：声明说"可以不装"，而一 `require` 对应模块就直接抛。
+  `log4js` 尤其严重 —— `service/main.js:2` 顶层 require 了 `main/libs/logger`，
+  **只要用 Service（用 toolkit 几乎必然用）就必须装 log4js**，optional 形同虚设。
+
+  **而第五行就是答案**：`shared/loadOptionalPeer.js` 用 `eval('require')` 绕开打包器
+  静态分析，让 optional peer 不进依赖图、未安装的业务也能正常加载模块。
+  **机制已经有了，只是只用在了一个包上。**
+
+  **建议按"缺了能不能降级"分两类处理，不要一刀切**：
+  - `log4js` / `electron-store` —— 它们托着 logger 与 store 两个**核心能力**，
+    缺了就是没有日志、没有存储，不存在有意义的降级。
+    建议**去掉 `optional` 标记**（版本范围已有，`electron` 就是这么声明的现成先例），
+    让缺失在安装期暴露，而不是运行期抛。
+  - `download` / `semver` —— 只服务 `capability/update`，不用这个 capability 的消费者
+    本不该被迫安装。建议改走 `loadOptionalPeer`，**保留 `optional` 并让它名副其实**。
+
+  **一个需要上游自己确认的前提**：`loadOptionalPeer` 的 `eval('require')` 在
+  **打包后的应用**里能否解析（主进程被 webpack 成单文件、依赖是否随 asar 一起发出去）。
+  `@vscode/sudo-prompt` 既然已在用这条路，应有现成答案；提出方未验证这一点，
+  故上面第二类建议的可行性以上游的结论为准。
+
+  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-19）。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
