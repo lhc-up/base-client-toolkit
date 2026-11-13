@@ -459,6 +459,22 @@
   - 提出方：`questionnaire-answer-v3.0` 真实仓接入（2026-11-13）。
     业务仓已有对应测试 `tests/main/logger-cross-context-error.test.js`，当前标记为已知失败。
 
+- **`update.downloadPkg` 走 Chromium HTTP 缓存，且不接受 `headers`，同一地址重新发布的增量包可能取到旧内容**：
+  `downloadPkg`（`main/capability/update/createUpdateCapability.js:117`）调用 `startDownload`
+  时只传 `urls / destinationPath / onProgress`，而底层 `libs/download` 用的 `net.request`
+  默认使用 session 的 HTTP 缓存。服务端响应没有显式禁止缓存时，Chromium 按启发式规则缓存，
+  再次下载同一 URL 会直接从缓存返回、**不发起请求**。
+  - 复现：nginx 静态托管一个 `.asax`（默认响应只有 `Last-Modified`），客户端下载一次后删除
+    `UserData/Packages` 下的包再触发热更：nginx access log 中没有第二次请求，包来自
+    `Cache/Cache_Data`。
+  - 影响：运维若在同一路径覆盖发布（修正打错的包），已下载过的客户端拿到的仍是旧包；
+    提出方旧实现下载时显式带 `Cache-Control: no-cache`，接入后该保证丢失。
+    `libs/download` 的 `start()` 本身支持 `headers`（大版本安装包由业务直接调用，已自行带上），
+    只是 `downloadPkg` 没有透传。
+  - 建议改法（二选一或都做）：`downloadPkg` 增加 `headers` 选项并透传给 `startDownload`；
+    或默认带 `Cache-Control: no-cache` —— 增量包本身就是需要精确版本的内容，缓存不该介入。
+  - 提出方：`questionnaire-answer-v3.0` 真实仓接入（2026-11-13）。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
