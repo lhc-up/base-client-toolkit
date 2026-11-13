@@ -447,6 +447,18 @@
 
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-23）。
 
+- **`main/libs/logger.js` 只用 `instanceof Error` 识别错误对象，来自其他 JS 上下文的 Error
+  会被记成 `{}`**：`print()`（`:85`）判 `arg instanceof Error`，不成立时走 `JSON.stringify`。
+  来自 iframe、`vm`、另一个 realm 的 Error 原型链不同，`instanceof` 恒为 false，
+  而 Error 的 `message` / `stack` 是不可枚举属性，序列化结果是 `{}` —— 错误信息与堆栈全部丢失。
+  - 复现：`Logger.error('x', vm.runInNewContext("new Error('boom')"))`，输出为 `x {}`。
+  - 实际影响：业务方在交互题自定义协议的处理链路上遇到过这类错误，
+    其原有主进程 logger 为此专门加过跨上下文判断，接入 toolkit 后该能力丢失。
+  - 建议改法：判定改为 `arg instanceof Error || Object.prototype.toString.call(arg) === '[object Error]'`，
+    其余分支不变；补一条用 `vm.runInNewContext` 构造 Error 的单测。
+  - 提出方：`questionnaire-answer-v3.0` 真实仓接入（2026-11-13）。
+    业务仓已有对应测试 `tests/main/logger-cross-context-error.test.js`，当前标记为已知失败。
+
 ## 已修正的文档问题
 
 - **§2.5 / §8.5 曾把 opt-out 契约的违约后果描述为"永久阻塞渲染进程（Electron 无原生
