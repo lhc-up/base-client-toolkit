@@ -8,6 +8,7 @@ const {
 } = require('./protocol');
 
 const registeredSchemas = new Map();
+let initialized = false;
 
 // 顶层保留字：preload 端 appNotice 顶层挂 subscribe/unsubscribe/once 语法糖，
 // namespace 名与之冲突会覆盖顶层方法。此处对齐禁用，让用户 init 就早报错。
@@ -75,6 +76,31 @@ function init(opts) {
         registerSchema(schema);
     }
     ipcMain.on(META_GET_SCHEMA_CHANNEL, handleGetSchema);
+    initialized = true;
+}
+
+/**
+ * 在 init 之后追加注册一个 schema（用于运行期挂载的包）。
+ *
+ * @param {Object} schema 同 init 中 userSchemas 的单项
+ * @throws {Error} 未 init、schema 校验不通过或 namespace 冲突时抛错
+ */
+function register(schema) {
+    if (!initialized) {
+        throw new Error('Notice.register requires Notice.init first');
+    }
+    registerSchema(schema);
+}
+
+/**
+ * 注销一个 namespace。之后推送该 namespace 的事件会按「未注册」抛错。
+ * namespace 不存在时静默返回。
+ *
+ * @param {string} namespace
+ * @returns {boolean} 是否确有注销
+ */
+function unregister(namespace) {
+    return registeredSchemas.delete(namespace);
 }
 
 function handleGetSchema(event) {
@@ -149,6 +175,15 @@ function direct(fullEventName, windowId, ...args) {
 function cleanup() {
     ipcMain.removeAllListeners(META_GET_SCHEMA_CHANNEL);
     registeredSchemas.clear();
+    initialized = false;
 }
 
-module.exports = { init, broadcast, direct, cleanup, validateNoticeSchema };
+module.exports = {
+    init,
+    register,
+    unregister,
+    broadcast,
+    direct,
+    cleanup,
+    validateNoticeSchema,
+};

@@ -19,7 +19,10 @@
         "./service/preload": "./src/service/preload.js",
         "./notice": "./src/notice/main.js",
         "./notice/preload": "./src/notice/preload.js",
-        "./shared": "./src/shared/index.js"
+        "./shared": "./src/shared/index.js",
+        "./host": "./src/host/index.js",
+        "./runtime": "./src/runtime/index.js",
+        "./build": "./src/build/index.js"
     },
     "engines": {
         "node": "^20.19.0 || ^22.13.0 || >=24"
@@ -28,6 +31,7 @@
         "lint": "eslint .",
         "test": "vitest run",
         "test:watch": "vitest",
+        "gen:host-modules": "node scripts/hostModules.js",
         "prepublishOnly": "npm run lint && npm test"
     },
     "keywords": [],

@@ -11,6 +11,7 @@ const {
 } = require('./protocol');
 
 const registeredSchemas = new Map();
+let initialized = false;
 
 function isPlainObject(v) {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -122,6 +123,21 @@ function registerService(schema) {
     registeredSchemas.set(namespace, schema);
 }
 
+/**
+ * 移除单个 namespace 的 async handler 与 sync listener。
+ *
+ * @param {Object} schema 已注册的 schema
+ */
+function removeServiceHandlers(schema) {
+    const sync = schema.sync || [];
+    for (const name of Object.keys(schema.handlers)) {
+        ipcMain.removeHandler(asyncChannel(schema.namespace, name));
+        if (sync.includes(name)) {
+            ipcMain.removeAllListeners(syncChannel(schema.namespace, name));
+        }
+    }
+}
+
 function handleGetServiceList(event) {
     try {
         const list = [...registeredSchemas.values()].map(s => ({
@@ -150,6 +166,38 @@ function init(opts) {
     }
     ipcMain.on(META_LIST_CHANNEL, handleGetServiceList);
     ipcMain.on(SERIALIZER_REPORT_CHANNEL, handleSerializerReport);
+    initialized = true;
+}
+
+/**
+ * 在 init 之后追加注册一个 schema（用于运行期挂载的包）。
+ *
+ * 渲染端的 appService 在页面加载时经元通道构建，因此新注册的 namespace
+ * 要在之后加载（或重新加载）的页面中才可见。
+ *
+ * @param {Object} schema 同 init 中 userSchemas 的单项
+ * @throws {Error} 未 init、schema 校验不通过或 namespace 冲突时抛错
+ */
+function register(schema) {
+    if (!initialized) {
+        throw new Error('Service.register requires Service.init first');
+    }
+    registerService(schema);
+}
+
+/**
+ * 注销一个 namespace：移除其全部 handler，并从元通道清单中删除。
+ * namespace 不存在时静默返回。
+ *
+ * @param {string} namespace
+ * @returns {boolean} 是否确有注销
+ */
+function unregister(namespace) {
+    const schema = registeredSchemas.get(namespace);
+    if (!schema) return false;
+    removeServiceHandlers(schema);
+    registeredSchemas.delete(namespace);
+    return true;
 }
 
 /**
@@ -189,15 +237,17 @@ function cleanup() {
     ipcMain.removeAllListeners(META_LIST_CHANNEL);
     ipcMain.removeAllListeners(SERIALIZER_REPORT_CHANNEL);
     for (const schema of registeredSchemas.values()) {
-        const sync = schema.sync || [];
-        for (const name of Object.keys(schema.handlers)) {
-            ipcMain.removeHandler(asyncChannel(schema.namespace, name));
-            if (sync.includes(name)) {
-                ipcMain.removeAllListeners(syncChannel(schema.namespace, name));
-            }
-        }
+        removeServiceHandlers(schema);
     }
     registeredSchemas.clear();
+    initialized = false;
 }
 
-module.exports = { init, cleanup, validateServiceSchema, handleSerializerReport };
+module.exports = {
+    init,
+    register,
+    unregister,
+    cleanup,
+    validateServiceSchema,
+    handleSerializerReport,
+};

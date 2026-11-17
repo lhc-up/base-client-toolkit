@@ -27,6 +27,7 @@ const PUBLIC_SUBPATHS = [
     './main/libs/integrity',
     './main/libs/logger',
     './main/libs/os',
+    './main/libs/protocol',
     './main/libs/scope',
     './main/libs/shortcut',
     './main/libs/singleInstance',
@@ -38,6 +39,9 @@ const PUBLIC_SUBPATHS = [
     './notice',
     './notice/preload',
     './shared',
+    './host',
+    './runtime',
+    './build',
 ];
 
 function collectJsFiles(entry) {

@@ -54,6 +54,11 @@ npm test
 | `/notice`、`/notice/preload` | main / preload | Notice 主端与 preload 桥 |
 | `/preload` | preload | preload 聚合入口（装配 `appService`/`appNotice`） |
 | `/shared` | 通用 | 共享工具（envelope、serializer 等，不含 Node/Electron 依赖） |
+| `/host` | main（宿主） | `exposeHostRuntime`、`createHost`：建立宿主运行时、挂载包。包不得引用 |
+| `/runtime` | main（包） | `getHostRuntime`、`definePkg`：零依赖，打进包的 bundle |
+| `/build` | 构建期 | `toolkitExternals`：bc.config `main.externals` 中使用 |
+
+宿主、包与宿主运行时的完整设计见 `docs/design/host.md`。
 
 ```js
 const { capability, paths } = require('@base-client/toolkit/main');
@@ -73,6 +78,7 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `logger` | 文件 | log4js 封装，六级方法 + `print` + `shutdown`。顶层即 `configure`、无 init。**契约：六级方法与 `shutdown` 永不抛**，失败走 `console.error` 次级通道自报并丢弃该条 —— 写日志不得影响主流程，调用方（尤其经 Service 跨进程的渲染层）可放心 fire-and-forget。要覆盖日志目录须在 require 本模块**之前**调 `setPathConfig({ log })` |
 | `store` | 文件 | **持久存储，两类分开用**（详见下方小节） |
 | `os`、`shortcut`、`singleInstance` | 文件 | 系统信息、全局热键、单实例 |
+| `protocol` | 文件 | 自定义协议：宿主 `declareSchemes`（ready 前一次），包 `serveResource` / `serveIframeResource`（返回撤销函数） |
 
 ### store：两类存储，别混用
 

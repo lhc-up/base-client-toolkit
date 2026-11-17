@@ -129,11 +129,11 @@ describe('capability/update package storage', () => {
     it('从 URL pathname 推导安全 .asar 文件名并原子改名', async () => {
         const { calls, update } = createHarness();
         await expect(update.downloadPkg({
-            url: 'https://example.test/releases/prod-v1.2.0.asax?signature=abc',
+            url: 'https://example.test/releases/prod-v1.2.0.asar?signature=abc',
         })).resolves.toBe(nodePath.join('/updates', 'prod-v1.2.0.asar'));
         expect(calls).toContainEqual(['ensureDir', '/updates']);
         expect(calls).toContainEqual(['download',
-            ['https://example.test/releases/prod-v1.2.0.asax?signature=abc'],
+            ['https://example.test/releases/prod-v1.2.0.asar?signature=abc'],
             nodePath.join('/updates', 'temp-id'),
             'undefined',
         ]);
@@ -148,12 +148,12 @@ describe('capability/update package storage', () => {
         const seen = [];
         const { calls, update } = createHarness();
         await expect(update.downloadPkg({
-            url: 'https://example.test/a.asax',
+            url: 'https://example.test/a.asar',
             onProgress: p => seen.push(p),
         })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
         // 底座收到的是函数，不是 undefined
         expect(calls).toContainEqual(['download',
-            ['https://example.test/a.asax'],
+            ['https://example.test/a.asar'],
             nodePath.join('/updates', 'temp-id'),
             'function',
         ]);
@@ -165,7 +165,7 @@ describe('capability/update package storage', () => {
         const { calls, update } = createHarness('win32', {
             startDownload: () => ({ promise: Promise.reject(failure), cancel: () => true }),
         });
-        await expect(update.downloadPkg({ url: 'https://example.test/a.asax' })).rejects.toBe(failure);
+        await expect(update.downloadPkg({ url: 'https://example.test/a.asar' })).rejects.toBe(failure);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 
@@ -181,7 +181,7 @@ describe('capability/update package storage', () => {
             }),
         });
         await expect(update.downloadPkg({
-            url: 'https://example.test/a.asax',
+            url: 'https://example.test/a.asar',
             timeoutMs: 1,
         })).rejects.toThrow(/整体超时/);
         expect(cancelled).toBe(true);
@@ -192,19 +192,19 @@ describe('capability/update package storage', () => {
     it('verifies optional SHA-256 integrity before promoting a download', async () => {
         const { calls, update } = createHarness();
         await expect(update.downloadPkg({
-            url: 'https://example.test/a.asax',
+            url: 'https://example.test/a.asar',
             integrity: 'sha256-' + createHash('sha256').update('payload').digest('hex'),
         })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
         await expect(update.downloadPkg({
-            url: 'https://example.test/b.asax',
+            url: 'https://example.test/b.asar',
             integrity: '0'.repeat(64),
         })).rejects.toThrow(/integrity/);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 
-    it('stages a trusted local .asax through a verified temporary file', async () => {
+    it('stages a trusted local .asar through a verified temporary file', async () => {
         const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asax';
+        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asar';
         const payload = Buffer.from('local update');
         const integrity = createHash('sha256').update(payload).digest('hex');
         files.set(sourcePath, payload);
@@ -220,18 +220,18 @@ describe('capability/update package storage', () => {
         expect(files.get(sourcePath)).toBe(payload);
     });
 
-    it('rejects relative and non-asax local package paths before copying', async () => {
+    it('rejects relative and non-asar local package paths before copying', async () => {
         const { calls, update } = createHarness();
-        await expect(update.stageLocalPkg({ sourcePath: 'relative.asax', integrity: '0'.repeat(64) }))
+        await expect(update.stageLocalPkg({ sourcePath: 'relative.asar', integrity: '0'.repeat(64) }))
             .rejects.toThrow(/absolute/);
         await expect(update.stageLocalPkg({ sourcePath: 'C:\\incoming\\payload.zip', integrity: '0'.repeat(64) }))
-            .rejects.toThrow(/\.asax/);
+            .rejects.toThrow(/\.asar/);
         expect(calls.some(call => call[0] === 'copy')).toBe(false);
     });
 
     it('keeps an existing final package when staged content fails integrity', async () => {
         const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asax';
+        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asar';
         const finalPath = nodePath.join('/updates', 'prod-v1.2.0.asar');
         files.set(sourcePath, Buffer.from('corrupt'));
         files.set(finalPath, Buffer.from('known good'));
@@ -254,7 +254,7 @@ describe('capability/update package storage', () => {
             },
         });
         await expect(update.stageLocalPkg({
-            sourcePath: 'C:\\incoming\\prod-v1.2.0.asax',
+            sourcePath: 'C:\\incoming\\prod-v1.2.0.asar',
             integrity: '0'.repeat(64),
         })).rejects.toBe(failure);
         expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
