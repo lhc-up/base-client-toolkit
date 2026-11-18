@@ -218,7 +218,9 @@ toolkitExternals   // webpack externals 函数；宿主与包的主进程 bundle
 | 安装包 | 下载与安装安装包（现有能力） |
 
 - 策略由业务决定：何时检查、按 semver 判断发更新包还是安装包、加载最新版还是与配置一致的版本。
-- 包文件统一使用 `.asar`（分发与落盘一致），不再使用 `.asax`。
+- **分发用 `.asax`，落盘用 `.asar`**：构建产物、上传、下载地址用 `.asax`；下载晋升与内置包落盘为 `.asar`。
+  原因：任何 Electron 程序（包括 VS Code）碰到 `.asar` 都会当作归档打开并持有句柄，Windows 下随后无法删除、覆盖；
+  而 Electron 只有路径中出现 `.asar` 才能读取包内文件。下载地址也兼容 `.asar`。
 
 ### 9.1 `.asar` 文件操作规则
 
@@ -244,7 +246,8 @@ Electron 22 实测结论（Windows）：
 ## 10. 影响
 
 - 新增 exports：`./host`、`./runtime`、`./build`、`./main/libs/protocol`。
-- update 能力：只接受 `.asax` 的限制改为 `.asar`，新增按 `{ name, version, env }` 查找与内置目录支持。
+- update 能力：下载接受 `.asax` / `.asar` 地址、统一落盘为 `.asar`；新增按 `{ name, version, env }` 查找与内置目录支持。
+- 新增通用能力 `main/capability/env`、`main/capability/logger`（由问卷宿主沉淀），宿主直接注册。
 - `Service.init` / `Notice.init` 行为不变，存量项目不改也能用。
 - 架构文档 §2.1「require 有限副作用」不变：`exposeHostRuntime` 是显式调用，不在 require 时执行。
 - 准入口径已更新为「领域内通用」（`capability-governance.md` §1）。

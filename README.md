@@ -46,7 +46,7 @@ npm test
 |---|---|---|
 | `/main` | main | 主进程聚合入口（capability 懒加载、BaseWindow、paths） |
 | `/main/capability` | main | capability 聚合入口（懒加载） |
-| `/main/capability/*` | main | 单个 capability（`example`/`update`/`download`/`archive`） |
+| `/main/capability/*` | main | 单个 capability（`example`/`update`/`download`/`archive`/`store`/`env`/`logger`） |
 | `/main/enhance/*` | main | 窗口增强（如 `BaseWindow`） |
 | `/main/libs/*` | main | 主进程通用库（见下表） |
 | `/main/paths` | main | 受控路径配置（`getFilePathConfig`/`setPathConfig`） |

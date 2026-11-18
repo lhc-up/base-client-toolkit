@@ -159,11 +159,24 @@ function createUpdateCapability(deps) {
         if (actual !== expected) throw new Error('update package integrity check failed');
     }
 
+    /**
+     * 包的分发名用 `.asax`、落盘名用 `.asar`：
+     * - 分发（构建产物、上传、下载地址）用 `.asax`：任何 Electron 程序（包括 VS Code）碰到 `.asar`
+     *   都会当作归档打开并持有句柄，Windows 下随后无法删除、覆盖；`.asax` 不受影响
+     * - 落盘用 `.asar`：Electron 只有路径中出现 `.asar` 才能读取包内文件
+     * 兼容直接以 `.asar` 分发的地址。
+     */
+    const PKG_SOURCE_RE = /\.(asax|asar)$/i;
+
+    function toPkgFileName(sourceName) {
+        return sourceName.replace(/\.asax$/i, '.asar');
+    }
+
     // 临时文件不带 `.asar` 后缀：写入过程中不能让 Electron 把它当归档目录处理
     function getPackagePaths(sourceName) {
         fse.ensureDirSync(updatePackageDir);
         const tempPath = path.join(updatePackageDir, randomUUID());
-        return { tempPath, finalPath: path.join(updatePackageDir, sourceName) };
+        return { tempPath, finalPath: path.join(updatePackageDir, toPkgFileName(sourceName)) };
     }
 
     function promoteTempPackage({ tempPath, finalPath, integrity, integrityRequired = false }) {
@@ -174,7 +187,7 @@ function createUpdateCapability(deps) {
     }
 
     /**
-     * 下载 `.asar` 包：先写不带后缀的临时文件，校验后原子晋升为 `.asar`。
+     * 下载包（`.asax` / `.asar` 地址）：先写不带后缀的临时文件，校验后原子晋升为 `.asar`。
      *
      * **下载底座用自家 `libs/download`，不是 npm `download`**（2026-10-19 换掉）：
      * 后者是 2019 年的包（底层 `got@9`）、**没有进度回调**，于是调用方画不出进度条；
@@ -183,7 +196,7 @@ function createUpdateCapability(deps) {
      * （考场环境常有透明代理）。两套下载实现并存本就是个缺陷，此处收敛掉。
      *
      * @param {object} option
-     * @param {string} option.url `.asar` 包地址
+     * @param {string} option.url `.asax` / `.asar` 包地址
      * @param {string} [option.integrity] `sha256-<hex>` 或 64 位 hex；给了才校验
      * ## 为什么这里要自己兜一层整体超时
      *
@@ -216,8 +229,8 @@ function createUpdateCapability(deps) {
         } catch {
             throw new TypeError(`update.downloadPkg url 无效：${url}`);
         }
-        if (!/\.asar$/i.test(sourceName)) {
-            throw new Error(`update.downloadPkg 只接受 .asar 包：${sourceName}`);
+        if (!PKG_SOURCE_RE.test(sourceName)) {
+            throw new Error(`update.downloadPkg 只接受 .asax / .asar 包：${sourceName}`);
         }
 
         const { tempPath, finalPath } = getPackagePaths(sourceName);
@@ -250,8 +263,8 @@ function createUpdateCapability(deps) {
             throw new TypeError('update.stageLocalPkg sourcePath must be absolute');
         }
         const sourceName = path.basename(sourcePath);
-        if (!/\.asar$/i.test(sourceName)) {
-            throw new Error(`update.stageLocalPkg only accepts .asar packages: ${sourceName}`);
+        if (!PKG_SOURCE_RE.test(sourceName)) {
+            throw new Error(`update.stageLocalPkg only accepts .asax / .asar packages: ${sourceName}`);
         }
 
         const { tempPath, finalPath } = getPackagePaths(sourceName);

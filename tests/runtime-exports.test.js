@@ -20,6 +20,8 @@ const PUBLIC_SUBPATHS = [
     './main/capability/download',
     './main/capability/archive',
     './main/capability/store',
+    './main/capability/env',
+    './main/capability/logger',
     './main/enhance/BaseWindow',
     './main/paths',
     './main/libs/archive',

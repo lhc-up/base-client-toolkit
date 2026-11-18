@@ -193,8 +193,16 @@ describe('update.downloadPkg replacing an existing package', () => {
         expect(files.get(finalPath).toString()).toBe('asar');
     });
 
-    it('rejects non-.asar urls', async () => {
+    it('accepts .asax urls and stores them as .asar', async () => {
+        const { files, update } = createHarness();
+        const finalPath = nodePath.join(UPDATES, 'demo-prod-v1.0.2.asar');
+        await expect(update.downloadPkg({ url: 'https://example.test/demo-prod-v1.0.2.asax' }))
+            .resolves.toBe(finalPath);
+        expect(files.has(finalPath)).toBe(true);
+    });
+
+    it('rejects other extensions', async () => {
         const { update } = createHarness();
-        await expect(update.downloadPkg({ url: 'https://example.test/demo.asax' })).rejects.toThrow(/\.asar/);
+        await expect(update.downloadPkg({ url: 'https://example.test/demo.zip' })).rejects.toThrow(/\.asax/);
     });
 });
