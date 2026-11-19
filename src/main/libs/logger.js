@@ -20,8 +20,10 @@
 const log4js = require('log4js');
 const path = require('path');
 const { getFilePathConfig } = require('../paths');
+const { getLoggerConfig } = require('./loggerConfig');
 
 const { log: logDir } = getFilePathConfig();
+const rotate = getLoggerConfig();
 
 function getLogPath(name) {
     return path.join(logDir, name);
@@ -47,8 +49,8 @@ log4js.configure({
                 pattern: '[%d{yyyy-MM-dd hh:mm:ss.SSS}] [%p] - %m',
             },
             compress: true,
-            maxLogSize: '100K',
-            numBackups: 20,
+            maxLogSize: rotate.maxLogSize,
+            numBackups: rotate.numBackups,
         },
     },
     categories: {
@@ -82,7 +84,9 @@ function print(fn, ...args) {
     try {
         let params = [];
         for (const arg of args) {
-            if (arg instanceof Error) {
+            // 跨上下文（iframe、vm、另一 realm）的 Error 原型链不同，instanceof 恒为 false；
+            // 而 message / stack 不可枚举，JSON.stringify 会把整条错误记成 {}，信息全丢
+            if (arg instanceof Error || Object.prototype.toString.call(arg) === '[object Error]') {
                 const { message, stack } = arg;
                 if (stack && stack.includes(message)) {
                     params.push(stack);

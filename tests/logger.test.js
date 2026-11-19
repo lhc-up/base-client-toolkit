@@ -97,6 +97,16 @@ describe('main/libs/logger 永不抛契约', () => {
         expect(() => Logger[name](hostileError())).not.toThrow();
     });
 
+    it('来自其他 JS 上下文的 Error 保留 message 与 stack（不被记成 {}）', () => {
+        const vm = require('node:vm');
+        const foreign = vm.runInNewContext("new Error('boom')");
+        const appender = vi.fn();
+        Logger.print(appender, foreign);
+        const text = appender.mock.calls[0].join(' | ');
+        expect(text).toContain('boom');
+        expect(text).not.toContain('{}');
+    });
+
     it('appender 抛错时 print 不抛，并自报', () => {
         const boom = () => { throw new Error('appender 炸了'); };
         expect(() => Logger.print(boom, '随便什么')).not.toThrow();
@@ -106,5 +116,22 @@ describe('main/libs/logger 永不抛契约', () => {
     it('shutdown 可重复调用且不抛', () => {
         expect(() => Logger.shutdown()).not.toThrow();
         expect(() => Logger.shutdown()).not.toThrow();
+    });
+});
+
+
+describe('main/libs/loggerConfig', () => {
+    it('默认轮转参数为 500K × 10', () => {
+        const { DEFAULTS } = require('../src/main/libs/loggerConfig');
+        expect(DEFAULTS).toEqual({ maxLogSize: '500K', numBackups: 10 });
+    });
+
+    it('setLoggerConfig 覆盖并可重复调用', () => {
+        const { setLoggerConfig, getLoggerConfig } = require('../src/main/libs/loggerConfig');
+        setLoggerConfig({ maxLogSize: '1M' });
+        expect(getLoggerConfig()).toEqual({ maxLogSize: '1M', numBackups: 10 });
+        setLoggerConfig({ numBackups: 3 });
+        expect(getLoggerConfig()).toEqual({ maxLogSize: '1M', numBackups: 3 });
+        setLoggerConfig({ maxLogSize: '500K', numBackups: 10 });
     });
 });

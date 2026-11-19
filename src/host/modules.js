@@ -22,6 +22,7 @@ module.exports = {
     get "main/libs/download"() { return require("../main/libs/download/index.js"); },
     get "main/libs/integrity"() { return require("../main/libs/integrity/index.js"); },
     get "main/libs/logger"() { return require("../main/libs/logger.js"); },
+    get "main/libs/loggerConfig"() { return require("../main/libs/loggerConfig.js"); },
     get "main/libs/os"() { return require("../main/libs/os.js"); },
     get "main/libs/pkgSource"() { return require("../main/libs/pkgSource.js"); },
     get "main/libs/protocol"() { return require("../main/libs/protocol.js"); },

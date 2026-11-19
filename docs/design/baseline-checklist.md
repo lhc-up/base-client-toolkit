@@ -27,8 +27,8 @@
 
 | # | 优先级 | 状态 | 问题 | 方案 | 验证 |
 |---|---|---|---|---|---|
-| K1 | P0 | 待确认 | logger 只用 `instanceof Error` 识别错误，跨上下文（iframe / vm / 另一 realm）的 Error 被记成 `{}`，message 与 stack 全丢 | 判定改为 `arg instanceof Error \|\| Object.prototype.toString.call(arg) === '[object Error]'`；其余分支不变 | 补 `vm.runInNewContext` 单测；问卷 `tests/main/logger-cross-context-error.test.js` 由已知失败转为通过 |
-| K2 | P0 | 待确认 | 日志轮转写死 100K × 20（约 2 MB，实测考场密度下留存约 4 小时），业务无法覆盖 | 默认改 500K × 10；新增 `main/libs/loggerConfig` 的 `setLoggerConfig`（须在 require logger 之前调用，时序同 `setPathConfig`） | 默认值与覆盖的单测；README 更新 |
+| K1 | P0 | 已完成（2026-11-19） | logger 只用 `instanceof Error` 识别错误，跨上下文（iframe / vm / 另一 realm）的 Error 被记成 `{}`，message 与 stack 全丢 | 判定改为 `arg instanceof Error \|\| Object.prototype.toString.call(arg) === '[object Error]'`；其余分支不变 | 补 `vm.runInNewContext` 单测；问卷 `tests/main/logger-cross-context-error.test.js` 由已知失败转为通过 |
+| K2 | P0 | 已完成（2026-11-19） | 日志轮转写死 100K × 20（约 2 MB，实测考场密度下留存约 4 小时），业务无法覆盖 | 默认改 500K × 10；新增 `main/libs/loggerConfig` 的 `setLoggerConfig`（须在 require logger 之前调用，时序同 `setPathConfig`） | 默认值与覆盖的单测；README 更新 |
 | K3 | P0 | 待确认 | `capability/store` 只给 `get` / `getFile` 开 sync；`setFile` / `removeFile` 无同步别名，写后立即读大概率读到旧值；文件头"其余五个"的理由对异步实现不成立 | `sync` 增加 `setFile`、`removeFile`；文件头按「同步实现 / 异步实现」分开写清代价 | schema 单测；G3 业务侧绕行删除后回归 |
 | K4 | P0 | 待确认 | `downloadPkg` 走 Chromium HTTP 缓存且不传 headers，同一地址覆盖发布的包可能取到旧内容 | 默认带 `Cache-Control: no-cache`；新增 `headers` 选项供覆盖，透传给 `startDownload` | 单测断言默认头与覆盖 |
 | K5 | P0 | 待确认 | `installApp` 退出用 `logger.shutdown()` + 盲等 500ms + `app.exit`，丢掉 shutdown 的 Promise，升级路径日志最易丢，且跳过 `will-quit` | `quitApp` 改为 `await logger.shutdown()` 再 `app.exit(1)`；调用点补 `await` | 单测：shutdown 未完成时不退出 |

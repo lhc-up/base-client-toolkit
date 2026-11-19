@@ -15,7 +15,7 @@ const DEFAULTS = Object.freeze({
     maxDepth: 32,
     // 日志/诊断用的单条上限。**IPC 路径不受此限制** —— serializeForIpc 显式传
     // Infinity，见 index.js 的说明。调高到 64 KB 是为了装得下正常业务 body，
-    // 同时相对 logger 的 maxLogSize（100K）仍留余量。
+    // 同时相对 logger 的 maxLogSize（默认 500K）仍留余量。
     maxStringLength: 65536,
     maxArrayLength: 1000,
     maxKeys: 1000,
