@@ -6,7 +6,6 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash, randomUUID } from 'node:crypto';
 import { createDownload } from '../src/main/libs/download/index.js';
-import { verify } from '../src/main/libs/integrity/index.js';
 import { createDownloadCapability } from '../src/main/capability/download/createDownloadCapability.js';
 
 async function tempRoot() {
@@ -39,7 +38,6 @@ async function createHarness({ transport = okTransport() } = {}) {
     const events = [];
     const capability = createDownloadCapability({
         download: createDownload({ transport }),
-        integrity: { verify },
         fsp,
         filePathConfig: { storageResource: root },
         broadcast: (name, payload) => events.push({ name, payload }),
@@ -68,8 +66,7 @@ describe('download capability', () => {
     it('exposes only start/cancel through Service and changed through Notice', () => {
         const capability = createDownloadCapability({
             download: { start: () => ({ promise: Promise.resolve(), cancel: () => true }) },
-            integrity: { verify },
-            fsp,
+                fsp,
             filePathConfig: { storageResource: os.tmpdir() },
             broadcast: () => {},
             randomUUID,
@@ -199,8 +196,7 @@ describe('download capability', () => {
     it('rejects unknown taskId cancellation', () => {
         const capability = createDownloadCapability({
             download: { start: () => ({ promise: Promise.resolve(), cancel: () => true }) },
-            integrity: { verify },
-            fsp,
+                fsp,
             filePathConfig: { storageResource: os.tmpdir() },
             broadcast: () => {},
             randomUUID,

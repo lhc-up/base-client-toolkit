@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
@@ -179,7 +179,119 @@ function createDownload(dependencies = {}) {
         };
     }
 
-    return { start };
+    /**
+     * 批量下载编排：按 `files` 顺序（或 `concurrency` 并发）逐个下载，只接收完整的目标路径，
+     * 不涉及业务 scope、不推送 Notice。文件级生命周期经 `onFileChange` 回调给出：
+     * `{ index, destinationPath, state, ... }`，state 为 started / progress / completed / skipped / failed / cancelled。
+     *
+     * `skipIfValid` + `integrity` 命中「目标已存在且摘要一致」时直接跳过（state: skipped），
+     * 供离线 / 弱网场景复用已缓存的文件。
+     *
+     * @param {Object} option
+     * @param {Array<{urls: string[], destinationPath: string, integrity?: {algorithm: string, expected: string}, skipIfValid?: boolean, timeoutMs?: number, idleTimeoutMs?: number, headers?: Object}>} option.files
+     * @param {(event: Object) => void} [option.onFileChange]
+     * @param {number} [option.concurrency=1]
+     * @returns {{ promise: Promise<{results: Array<{state: string, size?: number}>}>, cancel: () => boolean }}
+     */
+    function startBatch({ files, onFileChange, concurrency = 1 } = {}) {
+        if (!Array.isArray(files) || files.length === 0) {
+            throw new TypeError('download files must be a non-empty array');
+        }
+        for (const file of files) {
+            if (!file || typeof file.destinationPath !== 'string' || !path.isAbsolute(file.destinationPath)) {
+                throw new TypeError('download files[].destinationPath must be absolute');
+            }
+        }
+
+        let cancelled = false;
+        let current = null;
+        const emit = event => {
+            try { onFileChange?.(event); } catch { /* 回调异常不影响下载 */ }
+        };
+        const results = new Array(files.length);
+        let nextIndex = 0;
+
+        async function hashFile(filePath, algorithm) {
+            return new Promise((resolve, reject) => {
+                const hash = createHash(algorithm);
+                const stream = streamFs.createReadStream(filePath);
+                stream.on('data', chunk => hash.update(chunk));
+                stream.on('error', reject);
+                stream.on('end', () => resolve(hash.digest('hex')));
+            });
+        }
+
+        async function verify(filePath, spec) {
+            const { algorithm = 'sha256', expected } = spec.integrity;
+            const actual = await hashFile(filePath, algorithm);
+            return actual === String(expected).replace(new RegExp(`^${algorithm}-`, 'i'), '').toLowerCase();
+        }
+
+        async function runOne(index, spec) {
+            const base = { index, destinationPath: spec.destinationPath };
+            try {
+                if (spec.skipIfValid && spec.integrity) {
+                    const exists = await fsApi.stat(spec.destinationPath).then(() => true, () => false);
+                    if (exists && await verify(spec.destinationPath, spec)) {
+                        emit({ ...base, state: 'skipped' });
+                        return { state: 'skipped' };
+                    }
+                }
+                emit({ ...base, state: 'started' });
+                const handle = start({
+                    urls: spec.urls,
+                    destinationPath: spec.destinationPath,
+                    timeoutMs: spec.timeoutMs,
+                    idleTimeoutMs: spec.idleTimeoutMs,
+                    headers: spec.headers,
+                    onProgress: progress => emit({ ...base, state: 'progress', ...progress }),
+                });
+                current = handle;
+                if (cancelled) handle.cancel();
+                const result = await handle.promise;
+                if (spec.integrity && !(await verify(result.filePath, spec))) {
+                    await fsApi.rm(result.filePath, { force: true });
+                    throw errorWithCode('DOWNLOAD_INTEGRITY_MISMATCH', `integrity check failed: ${spec.destinationPath}`);
+                }
+                emit({ ...base, state: 'completed', size: result.size });
+                return { state: 'completed', size: result.size };
+            } catch (error) {
+                if (cancelled || error.code === 'DOWNLOAD_CANCELLED') {
+                    emit({ ...base, state: 'cancelled' });
+                    return { state: 'cancelled' };
+                }
+                emit({ ...base, state: 'failed', error: { code: error.code || 'DOWNLOAD_FAILED', message: error.message } });
+                return { state: 'failed' };
+            } finally {
+                current = null;
+            }
+        }
+
+        const promise = (async () => {
+            const worker = async () => {
+                while (!cancelled) {
+                    const index = nextIndex++;
+                    if (index >= files.length) return;
+                    results[index] = await runOne(index, files[index]);
+                }
+            };
+            const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, files.length));
+            await Promise.all(Array.from({ length: workerCount }, worker));
+            return { results };
+        })();
+
+        return {
+            promise,
+            cancel() {
+                if (cancelled) return false;
+                cancelled = true;
+                if (current) current.cancel();
+                return true;
+            },
+        };
+    }
+
+    return { start, startBatch };
 }
 
 module.exports = { createDownload, createElectronNetTransport };

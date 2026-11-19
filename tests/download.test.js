@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -113,6 +114,81 @@ describe('main download library', () => {
         });
         await expect(task.promise).rejects.toMatchObject({ code: 'DOWNLOAD_FAILED' });
         expect(fs.existsSync(destinationPath)).toBe(false);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+});
+
+
+describe('main download library: startBatch', () => {
+    it('逐文件回调 started / completed，单文件失败不影响后续', async () => {
+        const root = await tempRoot();
+        const events = [];
+        let calls = 0;
+        const task = createDownload({ transport: {
+            request: async () => {
+                calls += 1;
+                if (calls === 1) return { statusCode: 500, headers: {}, body: Readable.from(['x']) };
+                return response('payload');
+            },
+        } }).startBatch({
+            files: [
+                { urls: ['https://a.invalid/f1'], destinationPath: path.join(root, 'f1.bin') },
+                { urls: ['https://b.invalid/f2'], destinationPath: path.join(root, 'f2.bin') },
+            ],
+            onFileChange: event => events.push(event),
+        });
+
+        const { results } = await task.promise;
+        expect(results.map(r => r.state)).toEqual(['failed', 'completed']);
+        expect(events.filter(e => e.state === 'completed')).toHaveLength(1);
+        expect(fs.readFileSync(path.join(root, 'f2.bin'), 'utf8')).toBe('payload');
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('skipIfValid + integrity 命中已缓存文件时跳过，不发请求', async () => {
+        const root = await tempRoot();
+        const destinationPath = path.join(root, 'cached.bin');
+        await fsp.writeFile(destinationPath, 'payload');
+        const expected = createHash('sha256').update('payload').digest('hex');
+        let requested = 0;
+        const events = [];
+        const task = createDownload({ transport: {
+            request: async () => { requested += 1; return response('payload'); },
+        } }).startBatch({
+            files: [{
+                urls: ['https://a.invalid/cached'],
+                destinationPath,
+                integrity: { algorithm: 'sha256', expected },
+                skipIfValid: true,
+            }],
+            onFileChange: event => events.push(event),
+        });
+
+        const { results } = await task.promise;
+        expect(results[0].state).toBe('skipped');
+        expect(requested).toBe(0);
+        expect(events.map(e => e.state)).toEqual(['skipped']);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('cancel 中止当前文件，未开始的文件不再执行', async () => {
+        const root = await tempRoot();
+        const events = [];
+        const task = createDownload({ transport: {
+            request: (url, { signal }) => new Promise((_, reject) => {
+                signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { code: 'ABORT_ERR' })), { once: true });
+            }),
+        } }).startBatch({
+            files: [{ urls: ['https://a.invalid/f1'], destinationPath: path.join(root, 'f1.bin') }],
+            onFileChange: event => events.push(event),
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(task.cancel()).toBe(true);
+        expect(task.cancel()).toBe(false);
+        const { results } = await task.promise;
+        expect(results[0].state).toBe('cancelled');
+        expect(events.some(e => e.state === 'cancelled')).toBe(true);
         await fsp.rm(root, { recursive: true, force: true });
     });
 });

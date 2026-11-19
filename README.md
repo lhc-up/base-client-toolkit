@@ -146,6 +146,11 @@ appService.download.start({
 
 Notice：`download.changed`，载荷 `{ taskId, scope, fileName, state, transferred?, total?, percent?, size?, error? }`，`state` 为 `started/progress/completed/failed/cancelled`。**不提供 getState/getProgress**，进度与终态只通过 Notice 推送；载荷不含绝对路径；`taskId` 仅用于取消和事件关联，持久文件以 `scope + fileName` 引用。
 
+**业务主进程可直接复用编排**：`libs/download` 的 `startBatch({ files, onFileChange, concurrency })` 接收完整 `destinationPath`，
+不碰 scope、不发 Notice；`files` 每项支持 `{ urls, destinationPath, integrity?, skipIfValid?, timeoutMs?, idleTimeoutMs?, headers? }`，
+`skipIfValid` + `integrity` 命中「已存在且摘要一致」时直接跳过（state: `skipped`）。`capability/download` 只是
+「scope 解析 + startBatch + Notice 映射」的薄适配层。
+
 ### archive capability
 
 Service：`archive.extract(options) → { taskId }`，`archive.cancel(taskId) → { accepted }`。

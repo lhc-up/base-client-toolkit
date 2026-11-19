@@ -1,6 +1,10 @@
 /**
  * Renderer-facing download capability.
  *
+ * 本层只是薄适配：解析 scope → 调 `libs/download` 的批量编排 `startBatch` → 把文件级回调
+ * 映射成 `download.changed`。编排本身（循环、并发、取消传导、完整性跳过）在 libs 层，
+ * 业务主进程可直接复用 `startBatch`，不必经过本 capability。
+ *
  * 契约要点：
  * - Service: download.start(options) -> { taskId }, download.cancel(taskId) -> { accepted }
  * - Notice: download.changed carries started/progress/completed/failed/cancelled
@@ -58,8 +62,6 @@ function normalizeFileSpec(spec) {
 function createDownloadCapability(deps) {
     const {
         download,
-        integrity,
-        fsp,
         filePathConfig,
         broadcast,
         randomUUID,
@@ -75,45 +77,37 @@ function createDownloadCapability(deps) {
         const fileName = spec.fileName || deriveFileName(spec.urls, randomUUID);
         const destinationPath = path.join(scopeDir, fileName);
         const base = { taskId: task.id, scope, fileName };
-        emitChanged({ ...base, state: 'started' });
-        try {
-            const handle = download.start({
+        const handle = download.startBatch({
+            files: [{
                 urls: spec.urls,
                 destinationPath,
                 timeoutMs: spec.timeoutMs,
                 headers: spec.headers,
-                onProgress: progress => emitChanged({ ...base, state: 'progress', ...progress }),
-            });
-            task.cancelCurrent = handle.cancel;
-            if (task.cancelled) handle.cancel();
-            const result = await handle.promise;
-            if (spec.integrity) {
-                const check = await integrity.verify({
-                    filePath: result.filePath,
-                    algorithm: spec.integrity.algorithm,
-                    expected: spec.integrity.expected,
-                });
-                if (!check.valid) {
-                    await fsp.rm(result.filePath, { force: true });
-                    throw capabilityError(
-                        'DOWNLOAD_INTEGRITY_MISMATCH',
-                        `integrity check failed for ${fileName}`,
-                    );
+                integrity: spec.integrity,
+            }],
+            onFileChange: event => {
+                // 只把渲染层需要的字段推出去：绝对路径、index 等一律不外泄
+                if (event.state === 'started') {
+                    emitChanged({ ...base, state: 'started' });
+                } else if (event.state === 'progress') {
+                    emitChanged({ ...base, state: 'progress', transferred: event.transferred, total: event.total, percent: event.percent });
+                } else if (event.state === 'completed') {
+                    emitChanged({ ...base, state: 'completed', size: event.size });
+                } else if (event.state === 'skipped') {
+                    // 命中「已存在且完整性匹配」：对渲染层语义等同完成
+                    emitChanged({ ...base, state: 'completed' });
+                } else if (event.state === 'cancelled') {
+                    emitChanged({ ...base, state: 'cancelled' });
+                } else if (event.state === 'failed') {
+                    emitChanged({ ...base, state: 'failed', error: event.error });
                 }
-            }
-            emitChanged({ ...base, state: 'completed', size: result.size });
-            return 'completed';
-        } catch (error) {
-            if (task.cancelled || error.code === 'DOWNLOAD_CANCELLED') {
-                emitChanged({ ...base, state: 'cancelled' });
-                return 'cancelled';
-            }
-            emitChanged({
-                ...base,
-                state: 'failed',
-                error: { code: error.code || 'DOWNLOAD_FAILED', message: error.message },
-            });
-            return 'failed';
+            },
+        });
+        task.cancelCurrent = handle.cancel;
+        if (task.cancelled) handle.cancel();
+        try {
+            const { results } = await handle.promise;
+            return results[0]?.state || 'failed';
         } finally {
             task.cancelCurrent = null;
         }

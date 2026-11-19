@@ -8,14 +8,12 @@
 const { randomUUID } = require('node:crypto');
 const fsp = require('node:fs/promises');
 const { createDownload } = require('../../libs/download');
-const integrity = require('../../libs/integrity');
 const { getFilePathConfig } = require('../../paths');
 const Notice = require('../../../notice/main');
 const { createDownloadCapability } = require('./createDownloadCapability');
 
 module.exports = createDownloadCapability({
     download: createDownload(),
-    integrity,
     fsp,
     filePathConfig: getFilePathConfig(),
     broadcast: (event, payload) => Notice.broadcast(event, payload),

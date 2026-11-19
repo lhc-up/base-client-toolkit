@@ -37,7 +37,7 @@
 | K8 | P0 | 待确认 | `serializeForIpc` 把 Date / RegExp / Map / Set / BigInt / NaN / ±Infinity 降级成字符串或普通对象，且无解码路径（`NaN` 最隐蔽：普通运算结果过 IPC 即变字符串） | 新增 `structuredPassthrough`（默认 `false`），`serializeForIpc` 置 `true`；`safeStringify`（日志）保持现状；Error 的成对编解码不动 | 单测改为 structured-clone 语义；G4 两个项目确认消费面 |
 | K9 | P0 | 待确认 | `os` / `shortcut` / `singleInstance` 缺用法文档 | README 补最小示例与「`isLoongnix()` 会执行 `lsb_release`」等注意点 | 文档 |
 | K10 | P1 | 已完成（2026-11-19） | `libs/download` 的 `timeoutMs` 只覆盖等响应头阶段，body 传输阶段无任何超时或 stall 检测，服务端卡住时 promise 永不 settle | 增加 `idleTimeoutMs`（默认 60s）：两次数据间隔超时即 abort；`timeoutMs` 保持原语义 | 单测模拟卡住的流，断言 abort 与 `DOWNLOAD_TIMEOUT` |
-| K11 | P1 | 待确认 | `capability/download` 把编排、存储根、renderer 契约焊死，业务主进程无法复用；无「已存在且完整性匹配则跳过」语义 | 编排下沉 `libs/download` 批量入口（`files`、`skipIfValid`、并发、文件级回调）；`capability/download` 退为薄适配层 | 单测 + 业务侧复用后删掉重写的编排 |
+| K11 | P1 | 已完成（2026-11-19） | `capability/download` 把编排、存储根、renderer 契约焊死，业务主进程无法复用；无「已存在且完整性匹配则跳过」语义 | 编排下沉 `libs/download` 批量入口（`files`、`skipIfValid`、并发、文件级回调）；`capability/download` 退为薄适配层 | 单测 + 业务侧复用后删掉重写的编排 |
 | K12 | P1 | 待确认 | `BaseWindow` 不提供 preload 路径默认值，每个项目重写同一段绝对路径 | 与 F5 配对：由 frame 导出产物路径常量，toolkit 不内置默认（保持不依赖 frame 的边界） | 两个项目改用后编译与运行通过 |
 | K13 | P2 | 待确认 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 | `installApp` 增加可配置 dpkg 选项（如 `{ dpkgForce: ['overwrite'] }`），默认关闭；`installByDpkg` 与 `installByOpenShell` 两处都改 | Linux 验证 |
 | K14 | P2 | 待确认 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败 | 补提示与 `sleep`；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
