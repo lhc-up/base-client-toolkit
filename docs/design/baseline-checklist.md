@@ -16,12 +16,12 @@
 | G1 日志 | K1、K2 | 同一个 `libs/logger.js`，一次改动、一次测试 |
 | G2 下载与安装 | K4、K5、K6、K10、K11 | 都动 `capability/update` / `libs/download`；K11 会重构 K4、K10 的落点，顺序 K4/K5/K6 → K10 → K11 |
 | G3 存储 | K3、P1 | 上游开放 sync 别名后，业务侧的追加绕行必须同步删除 |
-| G4 序列化 | K8、P2 | 改变 IPC 实际类型，两个项目需确认不依赖旧行为 |
-| G5 构建信息 | F1、F2、P3 | 同一处 build-info；业务侧的 `?? env` 兜底与 frame 兜底重复 |
+| G4 序列化 | K8、两个项目核对 IPC 消费面 | 改变 IPC 实际类型，两个项目需确认不依赖旧行为 |
+| G5 构建信息 | F1、F2、P2 | 同一处 build-info；业务侧的 `?? env` 兜底与 frame 兜底重复 |
 | G6 版本声明 | F3、P4 | 对齐 Node 版本后，业务侧 `parallel: false` 的绕行是否保留一起定 |
 | G7 preload 路径 | K12、F5、P5 | 跨 frame / toolkit / 项目，必须一起改 |
 | G8 Linux | K13、K14、F8 | 同一批 Linux / 龙芯验证，一起改一起测 |
-| G9 独立项 | K7、K9、K15、F4、F6、F7 | 无跨仓库耦合，可单独排 |
+| G9 独立项 | K7、K9、K15、F4、F6、F7、P3、P6 | 无跨仓库耦合，可单独排 |
 
 ## 2. toolkit 条目
 
