@@ -79,6 +79,8 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `store` | 文件 | **持久存储，两类分开用**（详见下方小节） |
 | `os`、`shortcut`、`singleInstance` | 文件 | 系统信息、全局热键、单实例 |
 | `protocol` | 文件 | 自定义协议：宿主 `declareSchemes`（ready 前一次），包 `serveResource` / `serveIframeResource`（返回撤销函数） |
+| `resourceRoot` | 文件 | 资源根目录：宿主本地调试为 `<项目根目录>/resources`，打包运行为 `process.resourcesPath`；依据宿主运行时 `isHostDev` |
+| `pkgSource` | 文件 | 包来源：`decide`（devServer / file / semver）、`prepareFile`、`findSemver`、`parseDevPkgSources`；本地调试的 `BC_DEV_PKG_SOURCES` 配置与日志规范见 `docs/design/pkg-source.md` |
 
 ### store：两类存储，别混用
 
@@ -167,6 +169,9 @@ archive.registerDecryptor('biz-sm4', () => sm4.createDecipheriv('SM4-CBC', key, 
 
 归档语义：首版只支持 ZIP；不恢复 symlink/hardlink 元数据（流式 parser 暴露为普通文件的按普通文件写入）；只校验 entry 最终解析路径不越出解压根目录；不设人为大小阈值，磁盘错误由文件系统返回；失败清理 staging 并保留旧目标目录。
 ### update capability
+
+`findPkg({ name, env, version? })` 在内置目录（`<资源根目录>/packages`，调用时计算）与下载目录中查找；内置目录同时识别 `.asax`
+（本地调试时项目的 `resources/packages/` 放的是分发名），由 `main/libs/pkgSource` 复制为 `.asar` 副本后加载。
 
 保留既有契约。`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity?, onProgress? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。**下载底座是本库自己的 `libs/download`**（Electron `net.request`，多 URL fallback、临时文件原子晋升、尊重 Chromium 代理设置），`onProgress` 直接透传给它、载荷为 `{ transferred, total?, percent? }`；**该回调只在主进程内调用、不跨 IPC**，节流由调用方决定。2026-10-19 之前这里用的是 npm `download`（无进度回调），已整体移除。
 

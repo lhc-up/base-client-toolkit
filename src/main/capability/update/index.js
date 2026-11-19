@@ -15,17 +15,8 @@ const { getFilePathConfig } = require('../../paths');
 const { loadOptionalPeer } = require('../../../shared/loadOptionalPeer');
 const { createDownload } = require('../../libs/download');
 const { createUpdateCapability } = require('./createUpdateCapability');
-const { readAsarFile } = require('./readAsarFile');
-
-/**
- * 读取包的描述文件。用原生 fs（Electron 下为 `original-fs`）解析归档，
- * 不让 Electron 缓存并持有归档句柄，详见 `readAsarFile`。
- */
-function readPkgDescriptor(pkgPath) {
-    const rawFs = process.versions.electron ? require('original-fs') : require('fs');
-    const content = readAsarFile(rawFs, pkgPath, 'package.json');
-    return content ? JSON.parse(content.toString('utf8')) : null;
-}
+const { readPkgDescriptor } = require('./readPkgDescriptor');
+const { resolveResource } = require('../../libs/resourceRoot');
 
 module.exports = createUpdateCapability({
     path,
@@ -45,8 +36,8 @@ module.exports = createUpdateCapability({
     filePathConfig: getFilePathConfig(),
     loadSudoPrompt: () => loadOptionalPeer('@vscode/sudo-prompt'),
     setTimeout,
-    // 安装包内置包目录（frame 约定 resources/packages/）；dev 下 resourcesPath 指向 electron 自身，
-    // 目录不存在时 findPkg 自动跳过
-    builtinPackageDir: process.resourcesPath ? path.join(process.resourcesPath, 'packages') : null,
+    // 内置包目录：<资源根目录>/packages（本地调试为项目的 resources/packages，打包后为安装目录的 resources/packages），
+    // 调用时计算；目录不存在时 findPkg 自动跳过
+    builtinPackageDir: () => resolveResource('packages'),
     readPkgDescriptor,
 });

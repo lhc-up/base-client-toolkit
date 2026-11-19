@@ -20,12 +20,16 @@ function createUpdateCapability(deps) {
     } = deps;
 
     const updatePackageDir = filePathConfig.updatePackage;
+    // 内置目录在调用时计算：资源根目录取决于宿主运行方式（isHostDev），模块加载时宿主可能尚未设置
+    const getBuiltinPackageDir = typeof builtinPackageDir === 'function' ? builtinPackageDir : () => builtinPackageDir;
     const installerStageRoot = path.join(filePathConfig.temp, 'base-client-toolkit-installers');
 
     /**
-     * 读取目录下全部包（`*.asar`）的描述文件。
+     * 读取目录下全部包的描述文件。
      *
-     * 只认 `.asar` 结尾的条目：下载中的临时文件不带该后缀。
+     * 下载目录只认 `.asar`：下载中的临时文件不带该后缀。内置目录还认 `.asax`：本地调试时内置目录是
+     * 项目源码中的 `resources/packages/`，放的是分发名 `.asax`（打包时才改名为 `.asar`）；
+     * `.asax` 不能直接加载，由调用方（`main/libs/pkgSource`）复制为 `.asar` 副本后加载。
      * 描述文件经 `readPkgDescriptor` 读取，不经 Electron 的 asar 支持，
      * 否则被读过的包会被 Electron 持有句柄，Windows 下再也删不掉。
      *
@@ -34,9 +38,10 @@ function createUpdateCapability(deps) {
      * @returns {Array<Object>} 描述文件内容 + `path` + `type`
      */
     function readPkgDir(dir, type) {
+        const accept = type === 'builtin' ? /\.(asar|asax)$/i : /\.asar$/i;
         return fse
             .readdirSync(dir)
-            .filter(name => /\.asar$/i.test(name))
+            .filter(name => accept.test(name))
             .map(name => {
                 const pkgPath = path.join(dir, name);
                 try {
@@ -74,8 +79,9 @@ function createUpdateCapability(deps) {
         if (typeof name !== 'string' || !name) throw new TypeError('update.findPkg name 不能为空');
         if (typeof env !== 'string' || !env) throw new TypeError('update.findPkg env 不能为空');
         fse.ensureDirSync(updatePackageDir);
-        const builtin = builtinPackageDir && fse.existsSync(builtinPackageDir)
-            ? readPkgDir(builtinPackageDir, 'builtin')
+        const builtinDir = getBuiltinPackageDir();
+        const builtin = builtinDir && fse.existsSync(builtinDir)
+            ? readPkgDir(builtinDir, 'builtin')
             : [];
         const candidates = [...builtin, ...readPkgDir(updatePackageDir, 'update')]
             .filter(pkg => pkg.name === name

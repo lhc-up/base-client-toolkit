@@ -66,6 +66,13 @@ globalThis[Symbol.for('base-client')] = {
 | 业务字段 | 无 | 普通属性，浅覆盖，结果由业务负责；读取按 JS 默认行为；值可以是数据或函数 |
 
 - toolkit 字段用 Symbol key，业务字段取名因此不受限制。
+- 约定字段：以下业务字段由每个宿主在入口设置，toolkit（`main/libs/resourceRoot`）与包按约定读取。设计见 `pkg-source.md`。
+
+  | 字段 | 类型 | 含义 |
+  |---|---|---|
+  | `isHostDev` | boolean | 宿主是否本地调试（`dev:app` 启动），取宿主构建信息 `__BC_BUILD__.isPkgDev`；加载与选包的唯一依据 |
+  | `devPkgSources` | object | 本地调试时解析后的 `BC_DEV_PKG_SOURCES`（`pkgSource.parseDevPkgSources`）；打包运行为 `{}` |
+
 - 宿主运行时只在主进程。渲染层需要其中的信息时，由包自己封装能力提供，toolkit 不做通用开放。
 
 ### 3.2 key 常量

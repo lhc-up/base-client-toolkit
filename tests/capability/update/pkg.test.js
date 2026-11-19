@@ -131,6 +131,24 @@ describe('update.findPkg', () => {
         expect(update.findPkg({ name: 'demo', env: 'prod' })).toMatchObject({ version: '1.0.0' });
     });
 
+    it('builtin dir may be a function evaluated on each call', () => {
+        let dir = '/missing';
+        const { update } = createHarness({ builtinPackageDir: () => dir, pkgs: [pkg(BUILTIN, 'demo', '1.0.0')] });
+        expect(update.findPkg({ name: 'demo', env: 'prod' })).toBeNull();
+        dir = BUILTIN;
+        expect(update.findPkg({ name: 'demo', env: 'prod' })).toMatchObject({ type: 'builtin' });
+    });
+
+    it('accepts .asax in builtin dir only (download dir keeps .asar only)', () => {
+        const { update } = createHarness({ pkgs: [
+            { dir: BUILTIN, file: 'demo-prod-v1.0.0.asax', json: { name: 'demo', version: '1.0.0', env: 'prod' } },
+            { dir: UPDATES, file: 'demo-prod-v2.0.0.asax', json: { name: 'demo', version: '2.0.0', env: 'prod' } },
+        ] });
+        const found = update.findPkg({ name: 'demo', env: 'prod' });
+        expect(found).toMatchObject({ version: '1.0.0', type: 'builtin' });
+        expect(found.path).toBe(nodePath.join(BUILTIN, 'demo-prod-v1.0.0.asax'));
+    });
+
     it('requires name and env', () => {
         const { update } = createHarness();
         expect(() => update.findPkg({ env: 'prod' })).toThrow(TypeError);
