@@ -82,17 +82,6 @@
   - 是否调整及采用哪种形态属 toolkit 的设计选择，此处只记录缺口与实测依据。
   - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
 
-- **`BaseWindow` 不提供 preload 路径的默认值或推导**：`BaseWindow.create()` 的内置默认
-  options 只有 `{ show: false, backgroundColor: '#ffffff' }`，业务必须在
-  `getWindowOptions()` 里自行给出 `webPreferences.preload` 的绝对路径；
-  `main/paths.js` 也只管 userData 下的运行时目录，不含任何产物路径。
-  这是 toolkit 不依赖 frame 的**有意边界**（toolkit 不该假定 frame 的 `app/` 输出布局），
-  因此不算设计错误；但 frame + toolkit 组合下每个项目都要重写同一段样板
-  （frame 的 preload 产物路径是契约，固定为 `app/preload/index.js`）。
-  - 若要消除这段样板，更合适的形态可能是**由 frame 侧导出路径常量**，
-    而不是 toolkit 内置默认——后者会破坏两个包的独立性。
-  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-04）。
-
 - **`libs/download` 的 `timeoutMs` 只覆盖「等 response header」阶段，body 传输期间没有任何
   超时保护**：`createElectronNetTransport` 在 `request.on('response')` 回调里就调用了
   `cleanup()` 清除 timer（`main/libs/download/index.js:37-45`），随后的
