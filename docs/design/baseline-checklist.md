@@ -49,7 +49,7 @@
 |---|---|---|---|---|---|
 | F1 | P0 | 已完成（2026-11-19） | `BC_ENV_NAME` 无兜底、缺失时完全静默，`__BC_BUILD__.envName` 键直接不存在 | 缺失时回退为 `env` 的值，并输出一条构建警告（无法凭空推断展示名，回退值即为提示） | frame 单测；G5 业务侧 `?? env` 删除后回归 |
 | F2 | P0 | 已完成（2026-11-19） | 整体引用 `__BC_BUILD__` 会带入 `buildTime`，破坏产物 hash 稳定性与可复现性 | 整体对象定义（用于 `typeof` 判断）排除 `buildTime`；逐字段定义保留 | 单测：整体对象不含 `buildTime`；两个项目 `appInfo` 不受影响 |
-| F3 | P0 | 待确认 | `engines` 声明 Node ≥ 18.12，但实际 Node 16 可跑；同时 `css-minimizer-webpack-plugin` 8 官方要求 Node ≥ 20.9，两个项目靠 `parallel: false` 规避 | 核实真实下限并对齐 `engines`；README 明确区分「构建 Node 版本」与「Electron 内置 Node 版本」 | Node 20 / 22 下全量测试 |
+| F3 | P0 | 已完成（2026-11-19） | `engines` 声明 Node ≥ 18.12，但实际 Node 16 可跑；同时 `css-minimizer-webpack-plugin` 8 官方要求 Node ≥ 20.9，两个项目靠 `parallel: false` 规避 | 核实真实下限并对齐 `engines`；README 明确区分「构建 Node 版本」与「Electron 内置 Node 版本」 | Node 20 / 22 下全量测试 |
 | F4 | P0 | 待确认 | 通用替换未覆盖 `typeof process.env.BC_xxx`：未声明时不会被替换为 `undefined` | 插件同时拦截 `typeof` 写法；若不可行，在 README「变量」一节写明该限制 | frame 单测 |
 | F5 | P1 | 待确认 | 生产项目需要自行拼 preload / 产物路径 | frame 导出路径常量（如 `@base-client/frame/paths`），与 K12 配对 | 两个项目改用后编译与运行通过 |
 | F6 | P1 | 待确认 | webpack 预设未规整（main 不处理资源、共用配置未抽取） | 结构整理，产物行为不变 | 产物对比 |
@@ -63,7 +63,7 @@
 | P1 | 待确认 | 两个宿主在注册 `store` 时追加 `setFile` / `removeFile` 同步别名的绕行代码删除 | K3 |
 | P2 | 已完成（2026-11-19） | 两个项目 `appInfo` 中 `envName: __BC_BUILD__.envName ?? __BC_BUILD__.env` 的兜底删除 | F1 |
 | P3 | 待确认 | 问卷 `installDownloaded` 中前置的日志 flush 删除（`installApp` 会自己等） | K5 |
-| P4 | 待确认 | 两个项目 `bc.config.js` 的 `parallel: false` 绕行是否保留，随 F3 的结论定 | F3 |
+| P4 | 已完成（2026-11-19） | 两个项目 `bc.config.js` 的 `parallel: false` 绕行是否保留，随 F3 的结论定 | F3 |
 | P5 | 待确认 | 两个项目改用 frame 导出的路径常量 | K12 / F5 |
 | P6 | 待确认 | 问卷 `docs/base-client/已知问题.md` 的 B 类三条（跨上下文 Error、下载缓存、日志轮转）随上游修复删除 | K1 / K2 / K4 |
 | P7 | 已完成（2026-11-19） | 问卷 `appInfo.publishTime` 改读单独注入的 `__BC_BUILD_TIME__`（不属于 `__BC_BUILD__`） | F2 |
