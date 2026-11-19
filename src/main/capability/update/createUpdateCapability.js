@@ -224,7 +224,7 @@ function createUpdateCapability(deps) {
      *        约需 5 分钟，留一倍余量。调用方可按部署环境覆盖
      */
     async function downloadPkg(option = {}) {
-        const { url, integrity, onProgress, timeoutMs = 600000 } = option;
+        const { url, integrity, onProgress, headers, timeoutMs = 600000 } = option;
         if (typeof url !== 'string' || !url) {
             throw new TypeError('update.downloadPkg url 不能为空');
         }
@@ -243,7 +243,14 @@ function createUpdateCapability(deps) {
 
         let timer;
         try {
-            const task = startDownload({ urls: [url], destinationPath: tempPath, onProgress });
+            // 增量包要求的是精确版本内容，Chromium 的启发式缓存不该介入：同一地址覆盖发布后
+            // 必须能取到新包。默认带 no-cache，调用方可经 headers 覆盖
+            const task = startDownload({
+                urls: [url],
+                destinationPath: tempPath,
+                onProgress,
+                headers: { 'Cache-Control': 'no-cache', ...headers },
+            });
             await Promise.race([
                 task.promise,
                 new Promise((_, reject) => {
@@ -410,19 +417,26 @@ function createUpdateCapability(deps) {
         }
     }
 
-    function quitApp() {
-        logger.shutdown();
-        schedule(() => app.exit(1), 500);
+    /**
+     * 退出应用：先等日志 appender 全部写完，再 `app.exit(1)`。
+     *
+     * 不能盲等固定时长，也不能丢掉 `shutdown()` 的 Promise —— 大版本安装是最需要日志
+     * 排查的路径，`app.exit` 又会跳过 `will-quit`（见 libs/logger 文件头的实测对照表）。
+     * `logger.shutdown` 契约永不抛，这里不需要额外的错误分支。
+     */
+    async function quitApp() {
+        await logger.shutdown();
+        app.exit(1);
     }
 
     async function openInstaller(filePath) {
         const message = await shell.openPath(filePath);
         if (message) {
             dialog.showErrorBox('错误提示', '启动安装程序失败，请手动下载安装最新版本！');
-            quitApp();
+            await quitApp();
             return { started: false, reason: 'open-failed', message };
         }
-        quitApp();
+        await quitApp();
         return { started: true };
     }
 
@@ -433,10 +447,10 @@ function createUpdateCapability(deps) {
             const started = await installDebOnLinux(filePath);
             if (!started) {
                 dialog.showErrorBox('错误提示', '自动更新失败，请下载最新的安装包手动安装！');
-                quitApp();
+                await quitApp();
                 return { started: false, reason: 'open-failed' };
             }
-            quitApp();
+            await quitApp();
             return { started: true };
         }
         if (os.isWindows() || os.isMacOS()) return openInstaller(filePath);

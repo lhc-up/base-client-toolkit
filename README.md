@@ -183,21 +183,17 @@ toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定
 
 ## 接入前置依赖
 
-`archiver`、`fs-extra`、`lodash.merge`、`unzipper` 为 toolkit 直接依赖，随包安装。其余按 capability 自行安装（optional peerDependencies）：
+`archiver`、`fs-extra`、`lodash.merge`、`unzipper` 为 toolkit 直接依赖，随包安装。其余 peer 依赖：
 
-| capability | 依赖包 |
-|---|---|
-| logger | `log4js` |
-| store | `electron-store` |
-| update | `semver`, `@vscode/sudo-prompt` |
+| capability | 依赖包 | 是否可选 |
+|---|---|---|
+| logger | `log4js` | 必装（`libs/logger` 顶层 require，Service 也依赖它） |
+| store | `electron-store` | 必装（`libs/store` 顶层 require） |
+| update | `semver` | 必装（`capability/update` 顶层 require） |
+| update（Linux 提权安装） | `@vscode/sudo-prompt` | 可选：仅在 Linux 提权安装回退路径实际执行时经 `loadOptionalPeer` 加载 |
 
-**⚠️ `log4js` 声明为 optional，但实际上是必装** —— 它被 Service 直接依赖
-（`src/service/main.js` 用 toolkit 自己的 logger 记录来自 preload 的诊断上报，
-见 `service:serializerReport`）。只要用到 Service（几乎必然）就会加载它，
-未装则在加载 `main/libs/logger` 时直接抛。声明保持 optional 是为了不动既有消费者的
-安装要求，但**新接入的客户端请一并安装 `log4js`**。
-
-聚合入口懒加载各 capability；`@vscode/sudo-prompt` 仅在 Linux 提权安装回退路径实际执行时加载。
+`log4js` / `electron-store` / `semver` 的缺失会在**安装期**暴露（`peerDependencies` 未标 optional），
+不会等到运行期加载某个模块才抛。
 
 ## 热键配置（shortcut）
 

@@ -46,15 +46,6 @@
         "semver": ">=7 <8"
     },
     "peerDependenciesMeta": {
-        "log4js": {
-            "optional": true
-        },
-        "electron-store": {
-            "optional": true
-        },
-        "semver": {
-            "optional": true
-        },
         "@vscode/sudo-prompt": {
             "optional": true
         }

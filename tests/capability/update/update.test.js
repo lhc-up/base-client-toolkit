@@ -34,8 +34,8 @@ function createHarness(platform = 'win32', overrides = {}) {
         semver: require('semver'),
         // 注入形状随实现从 npm `download` 换成自家 libs/download 的 `start`：
         // `start({urls, destinationPath, onProgress})` → `{promise, cancel}`
-        startDownload: ({ urls, destinationPath, onProgress }) => {
-            calls.push(['download', urls, destinationPath, typeof onProgress]);
+        startDownload: ({ urls, destinationPath, onProgress, headers }) => {
+            calls.push(['download', urls, destinationPath, typeof onProgress, headers]);
             return {
                 promise: (async () => {
                     onProgress?.({ transferred: 7, total: 7, percent: 100 });
@@ -72,6 +72,34 @@ function createHarness(platform = 'win32', overrides = {}) {
     };
     return { calls, files, update: createUpdateCapability(deps) };
 }
+
+describe('capability/update 下载与退出', () => {
+    it('downloadPkg 默认带 Cache-Control: no-cache，调用方可覆盖', async () => {
+        const { calls, update } = createHarness();
+        await update.downloadPkg({ url: 'https://x/demo-prod-v1.0.0.asax' });
+        expect(calls.find(c => c[0] === 'download')[4]).toEqual({ 'Cache-Control': 'no-cache' });
+
+        await update.downloadPkg({ url: 'https://x/demo2-prod-v1.0.0.asax', headers: { 'Cache-Control': 'max-age=60' } });
+        expect(calls.filter(c => c[0] === 'download')[1][4]).toEqual({ 'Cache-Control': 'max-age=60' });
+    });
+
+    it('installApp 等日志 shutdown 完成后才退出', async () => {
+        let finishShutdown;
+        const { calls, update } = createHarness('win32', {
+            logger: {
+                info: () => {},
+                error: () => {},
+                shutdown: () => new Promise(resolve => { finishShutdown = resolve; }),
+            },
+        });
+        const pending = update.installApp('C:/Temp/setup.exe');
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(calls.some(c => c[0] === 'exit')).toBe(false);
+        finishShutdown();
+        await pending;
+        expect(calls).toContainEqual(['exit', 1]);
+    });
+});
 
 describe('capability/update platform contract', () => {
     it.each(['win32', 'darwin'])('%s 使用 shell.openPath 启动安装器并退出旧进程', async platform => {
@@ -136,6 +164,7 @@ describe('capability/update package storage', () => {
             ['https://example.test/releases/prod-v1.2.0.asar?signature=abc'],
             nodePath.join('/updates', 'temp-id'),
             'undefined',
+            { 'Cache-Control': 'no-cache' },
         ]);
         expect(calls).toContainEqual([
             'rename',
@@ -156,6 +185,7 @@ describe('capability/update package storage', () => {
             ['https://example.test/a.asar'],
             nodePath.join('/updates', 'temp-id'),
             'function',
+            { 'Cache-Control': 'no-cache' },
         ]);
         expect(seen).toEqual([{ transferred: 7, total: 7, percent: 100 }]);
     });
