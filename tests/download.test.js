@@ -46,6 +46,38 @@ describe('main download library', () => {
         await fsp.rm(root, { recursive: true, force: true });
     });
 
+    it('传输阶段连续无数据超过 idleTimeoutMs 即中止（不再永久挂起）', async () => {
+        const root = await tempRoot();
+        const destinationPath = path.join(root, 'stalled.bin');
+        const body = new Readable({ read() {} });
+        const task = createDownload({ transport: {
+            request: async () => ({ statusCode: 200, headers: {}, body }),
+        } }).start({
+            urls: ['https://stalled.invalid/file'],
+            destinationPath,
+            idleTimeoutMs: 30,
+        });
+
+        await expect(task.promise).rejects.toMatchObject({
+            code: 'DOWNLOAD_FAILED',
+            cause: expect.objectContaining({ code: 'DOWNLOAD_TIMEOUT' }),
+        });
+        expect(fs.existsSync(destinationPath)).toBe(false);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('idleTimeoutMs <= 0 关闭停顿检测', async () => {
+        const root = await tempRoot();
+        const destinationPath = path.join(root, 'file.bin');
+        const task = createDownload({ transport: { request: async () => response('payload') } }).start({
+            urls: ['https://ok.invalid/file'],
+            destinationPath,
+            idleTimeoutMs: 0,
+        });
+        await expect(task.promise).resolves.toMatchObject({ filePath: destinationPath });
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
     it('cancels an active transport and cleans the temporary file', async () => {
         const root = await tempRoot();
         const destinationPath = path.join(root, 'file.bin');

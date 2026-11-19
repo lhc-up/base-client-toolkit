@@ -54,9 +54,9 @@ function createElectronNetTransport() {
     };
 }
 
-function createProgressTransform({ total, onProgress }) {
+function createProgressTransform({ total, onProgress, onChunk }) {
     let transferred = 0;
-    return new Transform({
+    const transform = new Transform({
         transform(chunk, _encoding, callback) {
             transferred += chunk.length;
             onProgress?.({
@@ -66,9 +66,30 @@ function createProgressTransform({ total, onProgress }) {
                     ? Math.min(100, Math.round((transferred / total) * 100))
                     : undefined,
             });
+            onChunk?.();
             callback(null, chunk);
         },
     });
+    transform.getTransferred = () => transferred;
+    return transform;
+}
+
+/**
+ * 传输阶段停顿检测：等响应头的 `timeoutMs` 结束后开始计时，每收到一块数据重置；
+ * 连续 `idleTimeoutMs` 没有数据即触发 `onStall`。`idleTimeoutMs <= 0` 表示关闭。
+ */
+function createStallGuard({ idleTimeoutMs, onStall }) {
+    let timer = null;
+    return {
+        arm() {
+            if (!(idleTimeoutMs > 0)) return;
+            clearTimeout(timer);
+            timer = setTimeout(onStall, idleTimeoutMs);
+        },
+        stop() {
+            clearTimeout(timer);
+        },
+    };
 }
 
 function createDownload(dependencies = {}) {
@@ -76,7 +97,7 @@ function createDownload(dependencies = {}) {
     const fsApi = dependencies.fsp || fsp;
     const streamFs = dependencies.fs || fs;
 
-    function start({ urls, destinationPath, timeoutMs = 180000, headers, onProgress } = {}) {
+    function start({ urls, destinationPath, timeoutMs = 180000, idleTimeoutMs = 60000, headers, onProgress } = {}) {
         if (!Array.isArray(urls) || urls.length === 0) {
             throw new TypeError('download urls must be a non-empty array');
         }
@@ -105,8 +126,30 @@ function createDownload(dependencies = {}) {
                             throw errorWithCode('DOWNLOAD_HTTP_ERROR', `Download returned HTTP ${response.statusCode}`);
                         }
                         const totalValue = Number(headerValue(response.headers, 'content-length'));
-                        const progress = createProgressTransform({ total: Number.isFinite(totalValue) ? totalValue : undefined, onProgress });
-                        await pipeline(response.body, progress, streamFs.createWriteStream(tempPath));
+                        // 响应头到了才开始计时：body 传输阶段没有任何超时保护，服务端发完头就卡住时
+                        // 没有这个看门狗，promise 永远不会 settle
+                        let touch = () => {};
+                        const progress = createProgressTransform({
+                            total: Number.isFinite(totalValue) ? totalValue : undefined,
+                            onProgress,
+                            onChunk: () => touch(),
+                        });
+                        const guard = createStallGuard({
+                            idleTimeoutMs,
+                            onStall: () => {
+                                response.body?.destroy?.(errorWithCode(
+                                    'DOWNLOAD_TIMEOUT',
+                                    `Download stalled: no data for ${idleTimeoutMs}ms after ${progress.getTransferred()} bytes (${url})`,
+                                ));
+                            },
+                        });
+                        touch = guard.arm;
+                        guard.arm();
+                        try {
+                            await pipeline(response.body, progress, streamFs.createWriteStream(tempPath));
+                        } finally {
+                            guard.stop();
+                        }
                         const stat = await fsApi.stat(tempPath);
                         await fsApi.rm(destinationPath, { force: true });
                         await fsApi.rename(tempPath, destinationPath);
