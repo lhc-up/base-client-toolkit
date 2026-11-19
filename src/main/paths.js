@@ -13,6 +13,7 @@
 const { app } = require('electron');
 const path = require('path');
 const fse = require('fs-extra');
+const { getResourceRoot } = require('./libs/resourceRoot');
 
 let cachedConfig = null;
 
@@ -27,9 +28,8 @@ function computeDefault() {
         updatePackage: resolve('Packages'),
         log: resolve('Logs'),
         temp: app.getPath('temp'),
-        appResource: app.isPackaged
-            ? process.resourcesPath
-            : path.join(process.cwd(), 'resource'),
+        // 资源根目录：与 main/libs/resourceRoot 同一概念（本地调试为项目的 resources/，打包运行为 process.resourcesPath）
+        appResource: getResourceRoot(),
     };
     return cfg;
 }

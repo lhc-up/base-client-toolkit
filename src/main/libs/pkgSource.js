@@ -65,8 +65,12 @@ function createPkgSource(deps) {
         const stat = fse.statSync(source);
         const base = path.basename(source).replace(/\.asax$/i, '');
         const target = path.join(getCopyDir(), `${base}-${stat.size}-${Math.floor(stat.mtimeMs)}.asar`);
+        // 先写不带 .asar 后缀的文件再改名：Electron 会把以 .asar 结尾的路径当作归档解析，
+        // 直接复制到 .asar 目标时，复制前对目标的检查会报 Invalid package（与下载晋升同理，见 host.md §9.1）
+        const partial = target.replace(/\.asar$/i, '.partial');
         fse.ensureDirSync(getCopyDir());
-        fse.copySync(source, target);
+        fse.copySync(source, partial);
+        fse.renameSync(partial, target);
         copied.set(source, target);
         logger.info(`${PREFIX} 已将 ${source} 复制为临时副本 ${target}`);
         return target;
