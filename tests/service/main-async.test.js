@@ -124,7 +124,7 @@ describe('async channel handler', () => {
         expect(envelope).toEqual({ ok: true, data: 10 });
     });
 
-    it('result serialized: Date -> ISO string', async () => {
+    it('result 原样保留 Date（structured clone 语义）', async () => {
         Service.init({
             userSchemas: [{
                 namespace: 'foo',
@@ -133,6 +133,7 @@ describe('async channel handler', () => {
         });
         const handler = ipcMain.__handlers.get(asyncChannel('foo', 'now'));
         const envelope = await handler({});
-        expect(envelope.data).toBe('2026-01-01T00:00:00.000Z');
+        expect(envelope.data).toBeInstanceOf(Date);
+        expect(envelope.data.toISOString()).toBe('2026-01-01T00:00:00.000Z');
     });
 });

@@ -32,14 +32,14 @@ describe('serializeForIpc', () => {
         expect(() => serializeForIpc(mixed)).not.toThrow();
     });
 
-    it('result is JSON-safe', () => {
+    it('result 是 structured-clone 安全的（BigInt / Date 原样保留）', () => {
         const weird = {
             fn: () => {},
             sym: Symbol('s'),
             big: BigInt(42),
             toJSON() { throw new Error('bad'); },
         };
-        expect(() => JSON.stringify(serializeForIpc(weird))).not.toThrow();
+        expect(() => structuredClone(serializeForIpc(weird))).not.toThrow();
     });
 
     it('handles circular references without throwing', () => {

@@ -2,7 +2,14 @@ const ph = require('./placeholders');
 const ad = require('./adapters');
 const { resolveOpts, configureSerializer } = require('./limits');
 
-function serialize(value, opts) {
+/**
+ * @param {*} value
+ * @param {Object} [opts]
+ * @param {{ cloneSafe?: boolean }} [mode] `cloneSafe` 由 `serializeForIpc` 内部使用：
+ *   structured clone 原生支持的类型（Date / RegExp / Map / Set / BigInt / NaN / ±Infinity）原样透传；
+ *   日志路径不传，保持可读的字符串 / 普通对象形态。不作为对外选项开放。
+ */
+function serialize(value, opts, { cloneSafe = false } = {}) {
     const finalOpts = resolveOpts(opts);
     const seen = new WeakMap();
 
@@ -31,9 +38,9 @@ function serialize(value, opts) {
             }
             return v;
         }
-        if (t === 'number') return ph.numberPlaceholder(v);
+        if (t === 'number') return cloneSafe ? v : ph.numberPlaceholder(v);
         if (t === 'boolean') return v;
-        if (t === 'bigint') return ph.bigintPlaceholder(v);
+        if (t === 'bigint') return cloneSafe ? v : ph.bigintPlaceholder(v);
         if (t === 'symbol') return ph.symbolPlaceholder(v);
         if (t === 'function') return ph.fnPlaceholder(v);
 
@@ -45,9 +52,9 @@ function serialize(value, opts) {
         if (seen.has(v)) return ph.circularPlaceholder(seen.get(v));
 
         try {
-            if (v instanceof Date) return ad.adaptDate(v);
+            if (v instanceof Date) return cloneSafe ? v : ad.adaptDate(v);
             if (ad.isError(v)) return ad.adaptError(v, (x) => walk(x, depth + 1, path + '.cause'));
-            if (v instanceof RegExp) return ad.adaptRegExp(v);
+            if (v instanceof RegExp) return cloneSafe ? v : ad.adaptRegExp(v);
             if (ad.isBuffer(v) || ad.isArrayBuffer(v)) {
                 // IPC 路径原样透传（structured clone 原生支持）；日志路径换占位符
                 return finalOpts.binaryPassthrough ? v : ph.bufferPlaceholder(v);
@@ -57,11 +64,14 @@ function serialize(value, opts) {
             if (typeof WeakSet !== 'undefined' && v instanceof WeakSet) return ph.weakSetPlaceholder();
             if (ad.isWindowLike(v)) return ph.windowPlaceholder();
             if (ad.isDomNode(v)) return ph.domPlaceholder(v);
+            // structured clone 原生支持 Map / Set：IPC 路径原样透传，不进递归
             if (v instanceof Map) {
+                if (cloneSafe) return v;
                 seen.set(v, path);
                 return ad.adaptMap(v, (x) => walk(x, depth + 1, path));
             }
             if (v instanceof Set) {
+                if (cloneSafe) return v;
                 seen.set(v, path);
                 return ad.adaptSet(v, (x) => walk(x, depth + 1, path));
             }
@@ -207,7 +217,7 @@ function serializeForIpc(value, opts) {
         // 实测：3000 层 → `[Unserializable: SerializeError: Maximum call stack size exceeded]`。
         // 而深度从来不是本次缺陷的成因（那是字符串长度），所以保留默认的有限值，
         // 超限时经 reportError 上报、不再静默。
-    });
+    }, { cloneSafe: true });
 }
 
 module.exports = { serialize, safeStringify, configureSerializer, serializeForIpc };

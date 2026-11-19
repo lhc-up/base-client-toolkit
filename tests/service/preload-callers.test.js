@@ -85,11 +85,12 @@ describe('async caller', () => {
         expect(sentArg.cb).toMatch(new RegExp(`^${asyncChannel('foo', 'take')}-cb-\\d+-`));
     });
 
-    it('Date arg serialized to ISO string', async () => {
+    it('Date arg 原样传递（structured clone 语义）', async () => {
         const api = build([{ namespace: 'foo', handlers: ['log'], sync: [] }]);
         ipcRenderer.invoke.mockResolvedValue(okEnvelope(null));
         await api.foo.log(new Date('2026-01-01T00:00:00.000Z'));
-        expect(ipcRenderer.invoke.mock.calls[0][1]).toBe('2026-01-01T00:00:00.000Z');
+        expect(ipcRenderer.invoke.mock.calls[0][1]).toBeInstanceOf(Date);
+        expect(ipcRenderer.invoke.mock.calls[0][1].toISOString()).toBe('2026-01-01T00:00:00.000Z');
     });
 });
 

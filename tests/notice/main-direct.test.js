@@ -79,7 +79,8 @@ describe('direct', () => {
         const sentArgs = w.webContents.send.mock.calls[0][2];
         expect(Array.isArray(sentArgs)).toBe(true);
         expect(sentArgs.length).toBe(1);
-        expect(sentArgs[0].d).toBe('2026-01-01T00:00:00.000Z');
+        expect(sentArgs[0].d).toBeInstanceOf(Date);
+        expect(sentArgs[0].d.toISOString()).toBe('2026-01-01T00:00:00.000Z');
         expect(sentArgs[0].n).toBe(5);
     });
 

@@ -130,7 +130,8 @@ describe('T-10 real-world: electron-store nested value (setFile roundtrip)', () 
         };
         const out = serializeForIpc(cache);
         expect(out.version).toBe(2);
-        expect(out.createdAt).toBe('2026-01-01T00:00:00.000Z');
+        expect(out.createdAt).toBeInstanceOf(Date);
+        expect(out.createdAt.toISOString()).toBe('2026-01-01T00:00:00.000Z');
         expect(out.entries).toHaveLength(2);
         expect(out.entries[0]).toEqual({ id: 'a', value: 42, tags: ['x', 'y'] });
         expect(out.meta.user.name).toBe('张三');
@@ -261,15 +262,19 @@ describe('T-10 real-world: IPC round-trip integrity guarantee', () => {
         expect(out.unicode).toBe('张三 🎉');
         expect(out.frozen).toEqual({ x: 1 });
 
-        // —— 结构被适配成 plain 数据（这层是刻意的，见各自 adapter/placeholder）——
-        expect(out.date).toBe('2026-07-09T00:00:00.000Z');
+        // —— structured clone 原生支持的类型：原样保留 ——
+        expect(out.date).toBeInstanceOf(Date);
+        expect(out.regex).toBeInstanceOf(RegExp);
+        expect(out.map).toBeInstanceOf(Map);
+        expect(out.set).toBeInstanceOf(Set);
+        expect(typeof out.big).toBe('bigint');
+        // Error 走成对的编解码（adaptError / reviveError），属有意设计
         expect(out.error.message).toBe('boom');
         expect(out.error.code).toBe('EIO');
 
         // —— 不可克隆的：降级成占位符，且不抛 ——
         expect(typeof out.fn).toBe('string');
         expect(typeof out.sym).toBe('string');
-        expect(typeof out.big).toBe('string');
         expect(typeof out.circular.self).toBe('string'); // [Circular: …]
         expect(out.nully).toBe(null);
     });
