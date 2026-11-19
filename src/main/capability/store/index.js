@@ -24,11 +24,22 @@
  * 会阻塞所有窗口。所以**不要把大块数据放值存储、也不要高频 `getSync`**；
  * 真需要高频或大数据，用文件存储（异步）。
  *
- * ## 其余五个刻意不开 sync
+ * ## 同步实现的三个：只有 `get` 开 sync
  *
- * `set` / `remove` 的调用方通常不需要返回值，而 electron-store 的写入是同步落盘
- * （实测约 5.58 ms）；`setFile` / `getFile` / `removeFile` 本身就是异步文件 IO。
- * 把它们放上 sync 通道只会把更长的阻塞搬进主进程。
+ * `set` / `get` / `remove` 是**同步函数**，handler 一执行就卡住主进程事件循环、
+ * 所有窗口跟着卡；`set` / `remove` 的调用方通常也不需要返回值。因此只给 `get` 开 sync。
+
+## 异步实现的两个：同样开 sync
+ *
+ * `setFile` / `removeFile` 是 `async` + 真实 IO，**await 期间主进程事件循环照常跑**，
+ * 不存在"阻塞主进程"；被阻塞的只是发起调用的那个渲染进程，代价性质与上面不同。
+ * 上游 `getFile` 同为异步实现且已开 sync，理由一致。
+ *
+ * 真实需求是「写了立刻读得到」：写走 `setFile`、读走 `getFileSync`，两者在主进程是
+ * 互不串行的 async handler，纯异步写后立即读大概率读到旧值（`writeFile` 先 truncate
+ * 再写），两次并发写也可能先发起的后落盘。sync 是**新增别名、不替换**：
+ * 需要顺序语义时用 `setFileSync`，愿意并发时继续用 `setFile` —— 手段由 toolkit 提供，
+ * 是否串行化由业务决定。
  *
  * ## 二进制跨 IPC 的注意事项（渲染端）
  *
@@ -50,8 +61,8 @@ const serviceSchema = {
         getFile: store.getFile,
         removeFile: store.removeFile,
     },
-    // `get` 与 `getFile` 开同步别名，理由与代价见文件头
-    sync: ['get', 'getFile'],
+    // 同步别名：`get`（同步实现，代价见文件头）、`getFile` / `setFile` / `removeFile`（异步实现）
+    sync: ['get', 'getFile', 'setFile', 'removeFile'],
 };
 
 module.exports = {

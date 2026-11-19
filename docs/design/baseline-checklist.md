@@ -29,7 +29,7 @@
 |---|---|---|---|---|---|
 | K1 | P0 | 已完成（2026-11-19） | logger 只用 `instanceof Error` 识别错误，跨上下文（iframe / vm / 另一 realm）的 Error 被记成 `{}`，message 与 stack 全丢 | 判定改为 `arg instanceof Error \|\| Object.prototype.toString.call(arg) === '[object Error]'`；其余分支不变 | 补 `vm.runInNewContext` 单测；问卷 `tests/main/logger-cross-context-error.test.js` 由已知失败转为通过 |
 | K2 | P0 | 已完成（2026-11-19） | 日志轮转写死 100K × 20（约 2 MB，实测考场密度下留存约 4 小时），业务无法覆盖 | 默认改 500K × 10；新增 `main/libs/loggerConfig` 的 `setLoggerConfig`（须在 require logger 之前调用，时序同 `setPathConfig`） | 默认值与覆盖的单测；README 更新 |
-| K3 | P0 | 待确认 | `capability/store` 只给 `get` / `getFile` 开 sync；`setFile` / `removeFile` 无同步别名，写后立即读大概率读到旧值；文件头"其余五个"的理由对异步实现不成立 | `sync` 增加 `setFile`、`removeFile`；文件头按「同步实现 / 异步实现」分开写清代价 | schema 单测；G3 业务侧绕行删除后回归 |
+| K3 | P0 | 已完成（2026-11-19） | `capability/store` 只给 `get` / `getFile` 开 sync；`setFile` / `removeFile` 无同步别名，写后立即读大概率读到旧值；文件头"其余五个"的理由对异步实现不成立 | `sync` 增加 `setFile`、`removeFile`；文件头按「同步实现 / 异步实现」分开写清代价 | schema 单测；G3 业务侧绕行删除后回归 |
 | K4 | P0 | 已完成（2026-11-19） | `downloadPkg` 走 Chromium HTTP 缓存且不传 headers，同一地址覆盖发布的包可能取到旧内容 | 默认带 `Cache-Control: no-cache`；新增 `headers` 选项供覆盖，透传给 `startDownload` | 单测断言默认头与覆盖 |
 | K5 | P0 | 已完成（2026-11-19） | `installApp` 退出用 `logger.shutdown()` + 盲等 500ms + `app.exit`，丢掉 shutdown 的 Promise，升级路径日志最易丢，且跳过 `will-quit` | `quitApp` 改为 `await logger.shutdown()` 再 `app.exit(1)`；调用点补 `await` | 单测：shutdown 未完成时不退出 |
 | K6 | P0 | 已完成（2026-11-19） | `log4js` / `electron-store` 声明 optional 但顶层 require，实际必装；`semver` 同理，只用 `installApp` 的消费者也被迫安装 | `log4js`、`electron-store` 去掉 `optional`；`semver` 改走 `loadOptionalPeer` 惰性加载 | 未安装 semver 时仅调用 `installApp` 可用；`npm ls` 无 invalid |
@@ -38,7 +38,7 @@
 | K9 | P0 | 待确认 | `os` / `shortcut` / `singleInstance` 缺用法文档 | README 补最小示例与「`isLoongnix()` 会执行 `lsb_release`」等注意点 | 文档 |
 | K10 | P1 | 已完成（2026-11-19） | `libs/download` 的 `timeoutMs` 只覆盖等响应头阶段，body 传输阶段无任何超时或 stall 检测，服务端卡住时 promise 永不 settle | 增加 `idleTimeoutMs`（默认 60s）：两次数据间隔超时即 abort；`timeoutMs` 保持原语义 | 单测模拟卡住的流，断言 abort 与 `DOWNLOAD_TIMEOUT` |
 | K11 | P1 | 已完成（2026-11-19） | `capability/download` 把编排、存储根、renderer 契约焊死，业务主进程无法复用；无「已存在且完整性匹配则跳过」语义 | 编排下沉 `libs/download` 批量入口（`files`、`skipIfValid`、并发、文件级回调）；`capability/download` 退为薄适配层 | 单测 + 业务侧复用后删掉重写的编排 |
-| K12 | P1 | 待确认 | `BaseWindow` 不提供 preload 路径默认值，每个项目重写同一段绝对路径 | 与 F5 配对：由 frame 导出产物路径常量，toolkit 不内置默认（保持不依赖 frame 的边界） | 两个项目改用后编译与运行通过 |
+| K12 | P1 | 已完成（2026-11-19） | `BaseWindow` 不提供 preload 路径默认值，每个项目重写同一段绝对路径 | 与 F5 配对：由 frame 导出产物路径常量，toolkit 不内置默认（保持不依赖 frame 的边界） | 两个项目改用后编译与运行通过 |
 | K13 | P2 | 待确认 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 | `installApp` 增加可配置 dpkg 选项（如 `{ dpkgForce: ['overwrite'] }`），默认关闭；`installByDpkg` 与 `installByOpenShell` 两处都改 | Linux 验证 |
 | K14 | P2 | 待确认 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败 | 补提示与 `sleep`；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
 | K15 | P2 | 待确认 | Linux / 龙芯安装与 dpkg 流程缺少自动化与真机验证记录 | 与 F8 一起：建立 Linux 安装验证步骤与记录模板 | 真机记录 |
