@@ -24,7 +24,7 @@ module.exports = {
     get "main/libs/logger"() { return require("../main/libs/logger.js"); },
     get "main/libs/loggerConfig"() { return require("../main/libs/loggerConfig.js"); },
     get "main/libs/os"() { return require("../main/libs/os.js"); },
-    get "main/libs/pkgSource"() { return require("../main/libs/pkgSource.js"); },
+    get "main/libs/pkg"() { return require("../main/libs/pkg/index.js"); },
     get "main/libs/protocol"() { return require("../main/libs/protocol.js"); },
     get "main/libs/resourceRoot"() { return require("../main/libs/resourceRoot.js"); },
     get "main/libs/scope"() { return require("../main/libs/scope/index.js"); },

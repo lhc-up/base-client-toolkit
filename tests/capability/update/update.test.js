@@ -31,20 +31,6 @@ function createHarness(platform = 'win32', overrides = {}) {
                 files.delete(file);
             },
         },
-        semver: require('semver'),
-        // 注入形状随实现从 npm `download` 换成自家 libs/download 的 `start`：
-        // `start({urls, destinationPath, onProgress})` → `{promise, cancel}`
-        startDownload: ({ urls, destinationPath, onProgress, headers }) => {
-            calls.push(['download', urls, destinationPath, typeof onProgress, headers]);
-            return {
-                promise: (async () => {
-                    onProgress?.({ transferred: 7, total: 7, percent: 100 });
-                    files.set(destinationPath, Buffer.from('payload'));
-                    return { filePath: destinationPath, fileName: nodePath.basename(destinationPath), size: 7 };
-                })(),
-                cancel: () => true,
-            };
-        },
         randomUUID: () => 'temp-id',
         createHash,
         execFile: vi.fn((_file, _args, callback) => callback(null, '', '')),
@@ -63,26 +49,15 @@ function createHarness(platform = 'win32', overrides = {}) {
             isMacOS: () => platform === 'darwin',
         },
         filePathConfig: {
-            updatePackage: '/updates',
             temp: platform === 'win32' ? 'C:\\Temp' : '/tmp',
         },
         loadSudoPrompt: () => ({ exec: vi.fn() }),
-        setTimeout: fn => fn(),
         ...overrides,
     };
     return { calls, files, update: createUpdateCapability(deps) };
 }
 
-describe('capability/update 下载与退出', () => {
-    it('downloadPkg 默认带 Cache-Control: no-cache，调用方可覆盖', async () => {
-        const { calls, update } = createHarness();
-        await update.downloadPkg({ url: 'https://x/demo-prod-v1.0.0.asax' });
-        expect(calls.find(c => c[0] === 'download')[4]).toEqual({ 'Cache-Control': 'no-cache' });
-
-        await update.downloadPkg({ url: 'https://x/demo2-prod-v1.0.0.asax', headers: { 'Cache-Control': 'max-age=60' } });
-        expect(calls.filter(c => c[0] === 'download')[1][4]).toEqual({ 'Cache-Control': 'max-age=60' });
-    });
-
+describe('capability/update 退出', () => {
     it('installApp 等日志 shutdown 完成后才退出', async () => {
         let finishShutdown;
         const { calls, update } = createHarness('win32', {
@@ -144,150 +119,6 @@ describe('capability/update platform contract', () => {
         const installer = "/tmp/release name';touch owned;.deb";
         await expect(update.installApp(installer)).resolves.toEqual({ started: true });
         expect(execFile).toHaveBeenCalledWith('xdg-open', [installer], expect.any(Function));
-    });
-});
-
-describe('capability/update package storage', () => {
-    it('扫描前创建 updatePackage 目录，空目录返回空数组', () => {
-        const { calls, update } = createHarness();
-        expect(update.getUpdatePkgList({ name: 'demo', version: '1.0.0' })).toEqual([]);
-        expect(calls[0]).toEqual(['ensureDir', '/updates']);
-    });
-
-    it('从 URL pathname 推导安全 .asar 文件名并原子改名', async () => {
-        const { calls, update } = createHarness();
-        await expect(update.downloadPkg({
-            url: 'https://example.test/releases/prod-v1.2.0.asar?signature=abc',
-        })).resolves.toBe(nodePath.join('/updates', 'prod-v1.2.0.asar'));
-        expect(calls).toContainEqual(['ensureDir', '/updates']);
-        expect(calls).toContainEqual(['download',
-            ['https://example.test/releases/prod-v1.2.0.asar?signature=abc'],
-            nodePath.join('/updates', 'temp-id'),
-            'undefined',
-            { 'Cache-Control': 'no-cache' },
-        ]);
-        expect(calls).toContainEqual([
-            'rename',
-            nodePath.join('/updates', 'temp-id'),
-            nodePath.join('/updates', 'prod-v1.2.0.asar'),
-        ]);
-    });
-
-    it('把 onProgress 透传给下载底座（小版本热更要画进度条）', async () => {
-        const seen = [];
-        const { calls, update } = createHarness();
-        await expect(update.downloadPkg({
-            url: 'https://example.test/a.asar',
-            onProgress: p => seen.push(p),
-        })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
-        // 底座收到的是函数，不是 undefined
-        expect(calls).toContainEqual(['download',
-            ['https://example.test/a.asar'],
-            nodePath.join('/updates', 'temp-id'),
-            'function',
-            { 'Cache-Control': 'no-cache' },
-        ]);
-        expect(seen).toEqual([{ transferred: 7, total: 7, percent: 100 }]);
-    });
-
-    it('下载失败时删除随机临时文件并透传异常', async () => {
-        const failure = new Error('network down');
-        const { calls, update } = createHarness('win32', {
-            startDownload: () => ({ promise: Promise.reject(failure), cancel: () => true }),
-        });
-        await expect(update.downloadPkg({ url: 'https://example.test/a.asar' })).rejects.toBe(failure);
-        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
-    });
-
-    it('下载整体超时则取消任务并抛 —— 补回 npm download 被替换后丢失的整请求超时', async () => {
-        // libs/download 的 timeoutMs 只覆盖"等响应头"，body 卡住时 promise 永不 settle；
-        // 故 downloadPkg 自己用 Promise.race + cancel() 兜一个整体上限。
-        // 这里用「永不 settle 的 promise」模拟服务端发完头后半挂
-        let cancelled = false;
-        const { calls, update } = createHarness('win32', {
-            startDownload: () => ({
-                promise: new Promise(() => {}),
-                cancel: () => { cancelled = true; return true; },
-            }),
-        });
-        await expect(update.downloadPkg({
-            url: 'https://example.test/a.asar',
-            timeoutMs: 1,
-        })).rejects.toThrow(/整体超时/);
-        expect(cancelled).toBe(true);
-        // 失败路径照旧清临时文件
-        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
-    });
-
-    it('verifies optional SHA-256 integrity before promoting a download', async () => {
-        const { calls, update } = createHarness();
-        await expect(update.downloadPkg({
-            url: 'https://example.test/a.asar',
-            integrity: 'sha256-' + createHash('sha256').update('payload').digest('hex'),
-        })).resolves.toBe(nodePath.join('/updates', 'a.asar'));
-        await expect(update.downloadPkg({
-            url: 'https://example.test/b.asar',
-            integrity: '0'.repeat(64),
-        })).rejects.toThrow(/integrity/);
-        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
-    });
-
-    it('stages a trusted local .asar through a verified temporary file', async () => {
-        const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asar';
-        const payload = Buffer.from('local update');
-        const integrity = createHash('sha256').update(payload).digest('hex');
-        files.set(sourcePath, payload);
-
-        await expect(update.stageLocalPkg({ sourcePath, integrity }))
-            .resolves.toBe(nodePath.join('/updates', 'prod-v1.2.0.asar'));
-        expect(calls).toContainEqual(['copy', sourcePath, nodePath.join('/updates', 'temp-id')]);
-        expect(calls).toContainEqual([
-            'rename',
-            nodePath.join('/updates', 'temp-id'),
-            nodePath.join('/updates', 'prod-v1.2.0.asar'),
-        ]);
-        expect(files.get(sourcePath)).toBe(payload);
-    });
-
-    it('rejects relative and non-asar local package paths before copying', async () => {
-        const { calls, update } = createHarness();
-        await expect(update.stageLocalPkg({ sourcePath: 'relative.asar', integrity: '0'.repeat(64) }))
-            .rejects.toThrow(/absolute/);
-        await expect(update.stageLocalPkg({ sourcePath: 'C:\\incoming\\payload.zip', integrity: '0'.repeat(64) }))
-            .rejects.toThrow(/\.asar/);
-        expect(calls.some(call => call[0] === 'copy')).toBe(false);
-    });
-
-    it('keeps an existing final package when staged content fails integrity', async () => {
-        const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\prod-v1.2.0.asar';
-        const finalPath = nodePath.join('/updates', 'prod-v1.2.0.asar');
-        files.set(sourcePath, Buffer.from('corrupt'));
-        files.set(finalPath, Buffer.from('known good'));
-
-        await expect(update.stageLocalPkg({ sourcePath, integrity: '0'.repeat(64) }))
-            .rejects.toThrow(/integrity/);
-        expect(files.get(finalPath).toString()).toBe('known good');
-        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
-        expect(calls).not.toContainEqual(['remove', finalPath]);
-    });
-
-    it('cleans the temporary file when copying a local package fails', async () => {
-        const failure = new Error('copy failed');
-        const copyFileSync = vi.fn(() => { throw failure; });
-        const { calls, update } = createHarness('win32', {
-            fse: {
-                ensureDirSync: dir => calls.push(['ensureDir', dir]),
-                copyFileSync,
-                removeSync: file => calls.push(['remove', file]),
-            },
-        });
-        await expect(update.stageLocalPkg({
-            sourcePath: 'C:\\incoming\\prod-v1.2.0.asar',
-            integrity: '0'.repeat(64),
-        })).rejects.toBe(failure);
-        expect(calls).toContainEqual(['remove', nodePath.join('/updates', 'temp-id')]);
     });
 });
 

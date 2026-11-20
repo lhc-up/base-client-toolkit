@@ -80,7 +80,7 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `os`、`shortcut`、`singleInstance` | 文件 | 系统信息、全局热键、单实例 |
 | `protocol` | 文件 | 自定义协议：宿主 `declareSchemes`（ready 前一次），包 `serveResource` / `serveIframeResource`（返回撤销函数） |
 | `resourceRoot` | 文件 | 资源根目录：宿主本地调试为 `<项目根目录>/resources`，打包运行为 `process.resourcesPath`；依据宿主运行时 `isHostDev` |
-| `pkgSource` | 文件 | 包来源：`decide`（devServer / file / semver）、`prepareFile`、`findSemver`、`parseDevPkgSources`；本地调试的 `BC_DEV_PKG_SOURCES` 配置与日志规范见 `docs/design/pkg-source.md` |
+| `pkg` | 目录 | 应用包的通用操作：`get`（按来源取包）、`download`、`removeOtherVersions`、`parseDevSources`；包信息格式、来源规则、`BC_DEV_PKG_SOURCES` 见 `docs/design/pkg-source.md`；来源常量 `PKG_SOURCE` 由 `shared` 导出 |
 
 ### store：两类存储，别混用
 
@@ -173,14 +173,30 @@ archive.registerDecryptor('biz-sm4', () => sm4.createDecipheriv('SM4-CBC', key, 
 ```
 
 归档语义：首版只支持 ZIP；不恢复 symlink/hardlink 元数据（流式 parser 暴露为普通文件的按普通文件写入）；只校验 entry 最终解析路径不越出解压根目录；不设人为大小阈值，磁盘错误由文件系统返回；失败清理 staging 并保留旧目标目录。
+### pkg：应用包
+
+```js
+const pkg = require('@base-client/toolkit/main/libs/pkg');
+const { PKG_SOURCE } = require('@base-client/toolkit/shared');
+
+let p = await pkg.get(name, { env, version });        // 按来源取包；semver 找不到返回 null
+if (!p) {
+    p = await pkg.download({ url, name, env, version, onProgress });
+}
+pkg.removeOtherVersions(p);                             // 加载前删除下载目录中的其他版本
+require(p.main);                                        // 主进程入口
+win.loadURL(p.renderer);                                // 主页面；启动页为 p.update
+```
+
+包信息为 `{ name, version, env, source, main, renderer, update? }`，三个入口已是可直接使用的值。
+`download` 下载到下载目录（默认 `Cache-Control: no-cache`，可传 `headers`、`integrity`），名称、环境、版本与预期不符时删除文件并抛错；
+卡住的下载由 `libs/download` 的空闲超时结束。`onProgress` 只在主进程内调用、不跨 IPC，节流由调用方决定。
+
 ### update capability
 
-`findPkg({ name, env, version? })` 在内置目录（`<资源根目录>/packages`，调用时计算）与下载目录中查找；内置目录同时识别 `.asax`
-（本地调试时项目的 `resources/packages/` 放的是分发名），由 `main/libs/pkgSource` 复制为 `.asar` 副本后加载。
+只负责安装包（大版本）：暂存、校验、安装与退出。应用包（小版本）的查找、下载、清理见 `main/libs/pkg`。
 
-保留既有契约。`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。`downloadPkg({ url, integrity?, onProgress? })` 只接受 pathname 以 `.asax` 结尾的 URL，提供 `sha256-<hex>` 或 64 位 hex 时会在临时文件晋升为 `.asar` 前校验内容。**下载底座是本库自己的 `libs/download`**（Electron `net.request`，多 URL fallback、临时文件原子晋升、尊重 Chromium 代理设置），`onProgress` 直接透传给它、载荷为 `{ transferred, total?, percent? }`；**该回调只在主进程内调用、不跨 IPC**，节流由调用方决定。2026-10-19 之前这里用的是 npm `download`（无进度回调），已整体移除。
-
-业务主进程已经取得本地增量包时，可调用 `stageLocalPkg({ sourcePath, integrity })`。该方法只接受绝对 `.asax` 路径和必填 SHA-256，先复制到 `updatePackage` 内的随机临时文件，校验成功后再替换为同名 `.asar`；失败只清理临时文件，不删除来源文件，也不会在校验前覆盖已有包。
+`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。
 
 业务主进程已经取得安装器但需要等待用户确认时，使用 `stageLocalInstaller({ sourcePath, integrity })` 把文件复制到 `<temp>/base-client-toolkit-installers/<uuid>/` 并校验，再把返回的 staged descriptor 仅保存在主进程。确认安装时调用 `installStagedInstaller(staged)`；该方法会验证路径仍位于受控命名空间，并在启动前再次计算 SHA-256。取消时调用 `discardStagedInstaller(staged)`，后续启动可调用 `cleanupStagedInstallers()` best-effort 清理默认超过 24 小时的陈旧目录。Windows 安装器启动后可能锁定文件，旧客户端又会立即退出，因此成功启动不承诺当场删除 staged 文件。
 

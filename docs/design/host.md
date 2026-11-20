@@ -71,7 +71,7 @@ globalThis[Symbol.for('base-client')] = {
   | 字段 | 类型 | 含义 |
   |---|---|---|
   | `isHostDev` | boolean | 宿主是否本地调试（`dev:app` 启动），取宿主构建信息 `__BC_BUILD__.isPkgDev`；加载与选包的唯一依据 |
-  | `devPkgSources` | object | 本地调试时解析后的 `BC_DEV_PKG_SOURCES`（`pkgSource.parseDevPkgSources`）；打包运行为 `{}` |
+  | `devPkgSources` | object | 本地调试时各包的来源：宿主先放入自身包的默认项（`{ type: 'devServer', url: __BC_BUILD__.devUrl }`），再合并 `pkg.parseDevSources(BC_DEV_PKG_SOURCES)`；打包运行为 `{}` |
 
 - 宿主运行时只在主进程。渲染层需要其中的信息时，由包自己封装能力提供，toolkit 不做通用开放。
 

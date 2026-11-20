@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { readAsarFile } = require('../../../src/main/capability/update/readAsarFile');
+const { readAsarFile } = require('../src/main/libs/pkg/readAsarFile');
 
 /**
  * 按 asar 格式手工拼一个归档：

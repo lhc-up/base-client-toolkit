@@ -1,6 +1,6 @@
 # 包来源：运行方式、选包规则与资源目录
 
-> 状态：已评审（2026-11-19）。与 `host.md`（宿主、包与宿主运行时）配套。
+> 状态：已评审（2026-11-19），2026-11-20 修订（包格式统一、`libs/pkg`、启动页口径）。与 `host.md`（宿主、包与宿主运行时）配套。
 
 ## 1. 背景
 
@@ -48,50 +48,53 @@
 
 ### 4.1 三种来源
 
-| `type` | 主进程入口 | 页面 | 更新 | 适用场景 |
-|---|---|---|---|---|
-| `devServer` | `main` 指定的主进程入口（`dev:app` 或 `dev:app --pkg-only` 编译出的 `app/main/pkg.js`） | `url`（dev server，可热更新） | 不比对版本、不下载 | 本地开发自身；联调其他包 |
-| `file` | 指定包文件内的 `main/pkg.js` | 包内页面 | 不比对版本、不下载 | 排查某个具体的包，例如线上下载下来的 |
-| `semver` | 选中包内的 `main/pkg.js` | 包内页面 | 按线上版本（语义化版本）匹配，需要时下载 | 打包运行的唯一方式；本地调试中未配置的其他包 |
+来源常量 `PKG_SOURCE`（`@base-client/toolkit/shared`，主进程与渲染进程共用）。业务按来源区分处理时引用常量，不写字面量。
+
+| 来源 | 包信息从哪来 | 更新 | 适用场景 |
+|---|---|---|---|
+| `DEV_SERVER`（`devServer`） | `url` 根地址下的描述文件（`dev:app` / `dev:app --pkg-only` 提供，见 §5） | 不比对版本、不下载 | 本地开发自身；联调其他包 |
+| `FILE`（`file`） | 指定包文件内的描述文件 | 不比对版本、不下载 | 排查某个具体的包，例如线上下载下来的 |
+| `SEMVER`（`semver`） | 选中的包文件内的描述文件 | 按版本（语义化版本）匹配，需要时由调用方下载 | 打包运行的唯一方式；本地调试中未配置的包 |
 
 `semver` 的选包流程（自身的包与其他包相同）：
 
-1. 内置目录：`<资源根目录>/packages/`，名称、环境、版本与线上一致者；
-2. 下载目录：`UserData/Packages/`，同上；
-3. 现场下载：按线上下发的地址下载、校验、晋升为 `.asar`，再选中。
+1. 内置目录：`<资源根目录>/packages/`；
+2. 下载目录：`UserData/Packages/`；
+3. 给了版本：名称、环境、版本一致者，同版本内置优先；不给版本：名称、环境一致者中版本最新的；
+4. 都没有：返回 `null`，由调用方决定是否下载（`pkg.download`）。
 
-自身的包与其他包在 `semver` 下的差异只在「线上版本从哪来」与「版本不一致时怎么办」（更新包、安装包、重启或直接挂载），
-这部分属于各宿主的业务策略，保持现状，不在本设计内。
+「线上版本从哪来」与「版本不一致时怎么办」（更新包、安装包、直接挂载）属于各宿主的业务策略，不在 toolkit 内。
 
-### 4.2 默认来源（写在 toolkit 代码中，配置不写即为默认）
+### 4.2 来源规则
 
-| | 打包运行 | 本地调试 |
-|---|---|---|
-| 自身的包 | `semver` | `devServer`：`main` 为本项目编译出的 `app/main/pkg.js`，`url` 为宿主自己的 `appInfo.devUrl` |
-| 其他包 | `semver` | `semver` |
+- 打包运行：一律 `semver`。
+- 本地调试：宿主运行时 `devPkgSources` 中有该包就按配置，没有就 `semver`。
+- 「本地调试时自身的包走自己的 dev server」由宿主在暴露宿主运行时时写入 `devPkgSources` 默认项，toolkit 不区分自身与其他包：
+
+```js
+devPkgSources: {
+    [自身包名]: { type: PKG_SOURCE.DEV_SERVER, url: __BC_BUILD__.devUrl },
+    ...pkg.parseDevSources(process.env.BC_DEV_PKG_SOURCES),   // 配置可覆盖默认项
+}
+```
 
 ### 4.3 配置：`BC_DEV_PKG_SOURCES`
 
 - **只在本地调试（`isHostDev = true`）时生效**；打包运行时读取它的代码在构建期被整段删除，值也不会进入产物。
-- 写在宿主项目的 `.env` 中，默认空值；宿主静态读取后解析，经宿主运行时提供给包（字段 `devPkgSources`）。
+- 写在宿主项目的 `.env` 中，默认空值；宿主静态读取后用 `pkg.parseDevSources` 解析，经宿主运行时提供（字段 `devPkgSources`）。
 - 值为 JSON，键为包名（自身的包用自己 `package.json` 的 `name`），值为来源。
-- dotenv 不支持 YAML 式的缩进语法，但支持**单引号包裹的多行值**，因此 JSON 可以分行缩进书写（实测 dotenv 17）；
-  JSON 内部不能写注释，说明写在变量上方的 `#` 注释中。`.env` 中给出带注释的结构化示例：
+- dotenv 支持**单引号包裹的多行值**，因此 JSON 可以分行缩进书写；JSON 内部不能写注释，说明写在变量上方的 `#` 注释中：
 
 ```
 # 本地调试时各应用包的来源（只在 dev:app 下生效，打包后忽略）。键为包名，未列出的包按默认来源：
-#   自身的包默认 devServer（本项目编译目录 + 自己的 dev server），其他包默认 semver。
+#   自身的包默认 devServer（自己的 dev server），其他包默认 semver。
 # type 取值：
-#   devServer  main = 编译出的 app/main/pkg.js 路径，url = 该包页面的 dev server 地址
+#   devServer  url = 该包 dev server 的根地址（该项目执行 dev:app --pkg-only 时会打印）
 #   file       path = 指定的包文件（.asax / .asar），例如线上下载下来的包
-#   semver     按线上版本选包：内置目录 → 下载目录 → 现场下载
+#   semver     按版本选包：内置目录 → 下载目录 → 现场下载
 # 示例（去掉 # 后按需修改）：
 # BC_DEV_PKG_SOURCES='{
-#   "questionaire": {
-#     "type": "devServer",
-#     "main": "E:/code/eachina/questionnaire-answer-v3.0/app/main/pkg.js",
-#     "url": "http://localhost:8023/"
-#   },
+#   "questionaire": { "type": "devServer", "url": "http://localhost:8023/" },
 #   "demochild": { "type": "file", "path": "D:/Downloads/demochild-test-v1.0.0.asax" },
 #   "eachinacoreframe": { "type": "semver" }
 # }'
@@ -100,22 +103,63 @@ BC_DEV_PKG_SOURCES=
 
 | `type` | 必填字段 | 说明 |
 |---|---|---|
-| `devServer` | `main`、`url` | `main` 指向的文件必须存在 |
-| `file` | `path` | `.asax` 或 `.asar` |
+| `devServer` | `url` | dev server 未启动时取包报错「dev server 未启动或不可访问」 |
+| `file` | `path` | `.asax` 或 `.asar`；文件不存在时取包报错 |
 | `semver` | — | 本地调试中也走标准选包流程；用于自身的包时，完整走一遍更新流程（下载更新包等） |
 
-- 写了的包按配置，没写的按 §4.2 默认值。
-- 配置格式错误（JSON 解析失败、`type` 未知、必填字段缺失）：该项忽略、按默认值，并输出错误日志；不影响启动。
+- 配置格式错误（JSON 解析失败、`type` 未知、必填字段缺失）：该项忽略、按默认来源，并输出错误日志；不影响启动。
 
 ### 4.4 本地调试的安全约束
 
 - 本地调试时宿主**永不进入大版本安装包流程**（不下载、不安装），只记日志。
-- 来源为 `devServer` / `file` 的包不比对版本、不下载；启动检查照常请求线上配置（子应用列表、黑名单等仍需要它），只是跳过更新。
-- `file` 指定的包，描述文件中的名称、环境、版本与预期不符时：**照常加载，并在日志与终端输出警告**。
-  该能力只在本地调试生效（§4.3），打包运行时既无此代码也无此配置，因此警告不会出现在线上、不会被用户看到；
-  `semver` 下的选包要求名称、环境、版本全部匹配，不会选中不符的包。
+- 来源为 `devServer` / `file` 的包不比对版本、不下载；启动检查照常请求线上配置，只是跳过更新。
+- `devServer` / `file` 的包名称、环境与预期不符时：**照常加载，并输出警告**。该能力只在本地调试生效，警告不会出现在线上；
+  `semver` 下的选包要求名称、环境（与给定的版本）全部匹配，不会选中不符的包。
 
-## 5. `.asax` 的加载：临时副本
+## 5. 包格式与包信息
+
+### 5.1 描述文件
+
+包根目录下的 `package.json`，由 frame 打包时写入；入口为包内相对路径，页面与目录的命名只由 frame 的布局表决定：
+
+```json
+{ "name": "...", "env": "...", "version": "...", "main": "main/pkg.js", "renderer": "renderer/index.html", "update": "renderer/update.html" }
+```
+
+- `main`：包主进程入口；`renderer`：主页面；`update`：启动页（包里没有启动页时没有该字段）。
+- 本地调试时 `dev:app` 在 dev server 根地址下提供**同格式**的描述文件，入口为可直接使用的值（`main` 为磁盘绝对路径，页面为 dev server 地址）。
+  所以 dev server 也是一种包，toolkit 读它的方式与读包文件相同。
+- 缺少 `name` / `version` / `env` / `main` / `renderer` 任一项视为无效包。
+
+### 5.2 包信息
+
+`pkg.get` / `pkg.download` 返回：
+
+```js
+{ name, version, env, source, main, renderer, update? }
+```
+
+- `source`：`PKG_SOURCE` 之一。
+- 三个入口都是可直接使用的值：`main` 用于 `require`，`renderer` / `update` 用于 `loadURL`。
+- 组装规则只有一条：描述文件中的相对路径按包根目录拼成完整值，已是绝对路径或完整地址的原样使用。
+
+### 5.3 接口（`main/libs/pkg`）
+
+| 方法 | 作用 |
+|---|---|
+| `get(name, { env, version? })` | 按来源取包（§4）。异步：`devServer` 需要读 dev server 上的描述文件 |
+| `download({ url, name, env, version?, integrity?, headers?, onProgress? })` | 下载到下载目录：先写不带后缀的临时文件，校验后改名为 `.asar`；名称、环境、版本与预期不符时删除文件并抛错 |
+| `removeOtherVersions(pkg)` | 删除下载目录中该包的其他版本；非 `semver` 的包不处理。须在加载该包之前调用（Windows 下被读过的包删不掉） |
+| `parseDevSources(raw)` | 解析 `BC_DEV_PKG_SOURCES`（§4.3） |
+
+### 5.4 启动页口径
+
+- 启动页随应用包分发（frame 启动页规范：`src/renderer/update/`），但宿主启动时**始终用随客户端下发的那个包**打开启动页：
+  `pkg.get(自身包名, { env, version: 宿主版本 })`，同版本内置优先。
+- 因此启动页版本 = 宿主版本，只随大版本（重新安装）更新；启动页上显示宿主版本。客户端版本指首页包（应用包）版本，两者可以不同。
+- 取不到时：本地调试用自身的 dev server；打包运行说明安装包已损坏，提示重新安装并退出。
+
+## 6. `.asax` 的加载：临时副本
 
 Electron 只识别路径中带 `.asar` 的归档，`.asax` 不能直接加载。需要加载 `.asax` 时（`file` 指定的 `.asax`、本地调试时内置目录中的 `.asax`），
 toolkit 先复制为 `.asar` 临时副本再加载：
@@ -129,13 +173,13 @@ toolkit 先复制为 `.asar` 临时副本再加载：
 - 文件与目录操作一律用 `fs-extra`（`ensureDirSync`、`copySync`、`removeSync` 等），目录不存在、重复创建等边界由它处理；
   `.asar` 的读取与删除核对仍遵守 `host.md` §9.1。
 
-## 6. 资源目录收敛到 `resources/`
+## 7. 资源目录收敛到 `resources/`
 
 项目根目录的 `resources/` 是打包后 `resources/` 的镜像，凡是随安装包分发、运行时读取的资源都放这里：
 
 | 源码 | 打包后 | 读取方 |
 |---|---|---|
-| `resources/packages/*.asax`（内置的其他包） | `resources/packages/*.asar` | toolkit 选包（§4.1 第 1 步） |
+| `resources/packages/*.asax`（内置的其他包） | `resources/packages/*.asar` | toolkit 选包（§4.1） |
 | —（自身的包由 frame 构建） | `resources/packages/<name>-<env>-v<版本>.asar` | 同上 |
 | `resources/addons/` | `resources/addons/` | 宿主经 `frameResourceDir` 传给子应用 |
 | `resources/icons/` | `resources/icons/` | Linux 窗口图标（整合客户端 `icon.js`） |
@@ -148,51 +192,22 @@ toolkit 先复制为 `.asar` 临时副本再加载：
 - `build/icon.png` 是 frame 生成安装包图标的构建输入，留在 `build/`，不属于运行时资源。
 - `.gitignore`：`resources/packages/*` 忽略（保留 `.gitkeep`），`addons`、`icons` 入库。
 
-## 7. 日志
+## 8. 日志
 
-选包与加载统一前缀 `[包来源]`，每个包每次选择输出一组，保证事后能还原「为什么加载了它」：
+选包与加载统一前缀 `[包]`，每个包每次选择输出一组，保证事后能还原「为什么加载了它」：
 
 ```
-[包来源] questionaire：本地调试，依据配置 BC_DEV_PKG_SOURCES，type=semver
-[包来源] questionaire：内置目录 <资源根目录>/packages 未命中（期望 test v2.7.3）
-[包来源] questionaire：下载目录命中 questionaire-test-v2.7.3.asar
-[包来源] questionaire：已加载 来源=下载目录 路径=... 描述文件 name=questionaire env=test version=2.7.3
-[包来源] eachinacoreframe：本地调试，默认 type=devServer，dir=...\app url=http://localhost:8066/，跳过更新（线上 1.5.1）
-[包来源] demochild：file 指定 D:/Downloads/demochild-test-v1.0.0.asax，已复制为临时副本 ...；描述文件 env=test 与当前 mock 不符（警告）
+[包] questionaire：本地调试，依据配置 BC_DEV_PKG_SOURCES，来源=semver
+[包] questionaire：下载目录命中 questionaire-test-v2.7.3.asar
+[包] questionaire：已选定 { name, version, env, source, main, renderer }
+[包] eachinacoreframe：本地调试，默认来源，来源=devServer，url=http://localhost:8066/
+[包] demochild：已将 D:/Downloads/demochild-test-v1.0.0.asax 复制为临时副本 ...
+[包] demochild：指定的包与预期不符，照常加载：env=test（预期 prod）
 ```
 
 - 内容：包名、运行方式、依据（默认 / 配置）、依次检查的来源与结果、最终加载的来源与路径或地址、描述文件的名称 / 环境 / 版本、
   不符警告、跳过更新的原因。
 - 主进程日志写入日志文件；本地调试时主进程输出由 `dev:app` 转到终端。不在页面提示。
-
-## 8. 改动清单
-
-### toolkit
-
-- 新增选包函数（暂定 `main/libs/pkgSource`）：输入包名、是否自身、线上版本与地址、`isHostDev`、`devPkgSources`，
-  输出 `{ type, path, url?, version, env, ... }`；内含 §4 规则、§5 临时副本、§7 日志。toolkit 不直接读环境变量。
-- 资源根目录计算；update 能力的内置目录改为 `<资源根目录>/packages`，读取目录时兼容 `.asax`（经 §5 副本加载）。
-- `host.md` 补充宿主运行时约定字段 `isHostDev`、`devPkgSources`；README 与本文档说明 `BC_DEV_PKG_SOURCES`。
-
-### frame
-
-- 构建信息字段 `dev` 改名为 `isPkgDev`（§3）。
-- 打包时复制 `resources/` 到安装包（`packages/*.asax` → `.asar`），自身包落 `resources/packages/` 并检查重名。
-- `pkg-contract.md`、README 补充资源目录约定。
-
-### 整合客户端
-
-- 宿主入口在宿主运行时设置 `isHostDev`、`devPkgSources`（静态读取 `process.env.BC_DEV_PKG_SOURCES`）。
-- `homePkg.js`、`childApp.js` 改用 toolkit 选包；`icon.js`、`frameResourceDir` 改用资源根目录；删除 `getDevOverride`。
-- 启动页：自身来源不是 `semver` 时跳过版本比对与下载；本地调试时不进入安装包流程。
-- `client/` → `resources/packages/`，`addons/` → `resources/addons/`，`build/icons/` → `resources/icons/`；删除 `electron-builder.config.js` 的 `extraResources` 与 `builtinChildPkgs`；更新 `.gitignore`。
-- `.env`：`BC_DEV_PKGS` 改为 `BC_DEV_PKG_SOURCES`（§4.3 的带注释示例）；`appInfo.isDev` 改为 `isPkgDev`。
-
-### 问卷
-
-- 宿主入口设置 `isHostDev`、`devPkgSources`；`currentPkg.js` 改用 toolkit 选包。
-- 启动页：自身来源不是 `semver` 时跳过版本比对与下载；本地调试时不进入安装包流程。
-- `.env` 增加 `BC_DEV_PKG_SOURCES=`（§4.3 的带注释示例）；`appInfo.isDev` 改为 `isPkgDev`。
 
 ## 9. 不在本设计内
 
