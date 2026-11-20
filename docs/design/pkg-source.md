@@ -147,7 +147,7 @@ BC_DEV_PKG_SOURCES=
 
 | 方法 | 作用 |
 |---|---|
-| `get(name, { env, version? })` | 按来源取包（§4）。异步：`devServer` 需要读 dev server 上的描述文件 |
+| `get(name, { env, version?, source? })` | 按来源取包（§4）。异步：`devServer` 需要读 dev server 上的描述文件。`source` 一般不传，宿主需要明确指定来源时才传（如 §5.4 的回落） |
 | `download({ url, name, env, version?, integrity?, headers?, onProgress? })` | 下载到下载目录：先写不带后缀的临时文件，校验后改名为 `.asar`；名称、环境、版本与预期不符时删除文件并抛错 |
 | `removeOtherVersions(pkg)` | 删除下载目录中该包的其他版本；非 `semver` 的包不处理。须在加载该包之前调用（Windows 下被读过的包删不掉） |
 | `parseDevSources(raw)` | 解析 `BC_DEV_PKG_SOURCES`（§4.3） |
@@ -157,7 +157,7 @@ BC_DEV_PKG_SOURCES=
 - 启动页随应用包分发（frame 启动页规范：`src/renderer/update/`），但宿主启动时**始终用随客户端下发的那个包**打开启动页：
   `pkg.get(自身包名, { env, version: 宿主版本 })`，同版本内置优先。
 - 因此启动页版本 = 宿主版本，只随大版本（重新安装）更新；启动页上显示宿主版本。客户端版本指首页包（应用包）版本，两者可以不同。
-- 取不到时：本地调试用自身的 dev server；打包运行说明安装包已损坏，提示重新安装并退出。
+- 取不到时：本地调试用自身的 dev server（`get` 传 `source: { type: DEV_SERVER, url: devUrl }`）；打包运行说明安装包已损坏，提示重新安装并退出。
 
 ## 6. `.asax` 的加载：临时副本
 

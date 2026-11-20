@@ -173,6 +173,18 @@ describe('libs/pkg get：devServer / file', () => {
         });
     });
 
+    it('调用方指定来源时不按来源规则', async () => {
+        const fetchJson = vi.fn(async () => descriptorOf('demo', '1.0.0', {
+            main: 'D:/proj/app/main/pkg.js', renderer: 'http://localhost:8066/index.html',
+        }));
+        harness = createHarness({ runtime: { isHostDev: true, devPkgSources: {} }, fetchJson });
+        const pkg = await harness.lib.get('demo', {
+            env: 'prod', source: { type: PKG_SOURCE.DEV_SERVER, url: 'http://localhost:8066/' },
+        });
+        expect(fetchJson).toHaveBeenCalledWith('http://localhost:8066/package.json');
+        expect(pkg.source).toBe(PKG_SOURCE.DEV_SERVER);
+    });
+
     it('devServer：dev server 未启动时明确报错', async () => {
         harness = createHarness({
             runtime: { isHostDev: true, devPkgSources: { demo: { type: 'devServer', url: 'http://localhost:8023/' } } },

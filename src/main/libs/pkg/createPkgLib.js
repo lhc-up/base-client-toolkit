@@ -291,15 +291,23 @@ function createPkgLib(deps) {
      * - semver：给版本找该版本，不给取最新（同版本内置优先）；找不到返回 null，是否下载由调用方决定
      * - devServer / file：忽略版本，读配置指定的包；名称、环境与预期不符时照常加载并警告
      *
+     * 一般不传 `source`，按来源规则决定；宿主需要明确指定时才传（如本地调试找不到内置包时回落到自己的 dev server）。
+     *
      * @param {string} name 包名
-     * @param {{ env: string, version?: string }} option
+     * @param {{ env: string, version?: string, source?: { type: string, url?: string, path?: string } }} option
      * @returns {Promise<Object|null>} 包信息
      * @throws {Error} devServer / file 指定的包不可用
      */
-    async function get(name, { env, version } = {}) {
+    async function get(name, { env, version, source: specified } = {}) {
         if (typeof name !== 'string' || !name) throw new TypeError('pkg.get name 不能为空');
         if (typeof env !== 'string' || !env) throw new TypeError('pkg.get env 不能为空');
-        const source = getSource(name);
+        let source;
+        if (specified) {
+            source = { ...specified };
+            logger.info(`${PREFIX} ${name}：调用方指定来源=${source.type}`);
+        } else {
+            source = getSource(name);
+        }
 
         let pkg;
         if (source.type === PKG_SOURCE.DEV_SERVER) {
