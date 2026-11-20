@@ -67,6 +67,65 @@ describe('main download library', () => {
         await fsp.rm(root, { recursive: true, force: true });
     });
 
+    it('停顿超时中止网络请求，并改试下一个地址', async () => {
+        const root = await tempRoot();
+        const destinationPath = path.join(root, 'stalled.bin');
+        const aborted = [];
+        const calls = [];
+        const task = createDownload({ transport: {
+            request: async url => {
+                calls.push(url);
+                if (calls.length === 1) {
+                    const body = new Readable({ read() {} });
+                    body.push(Buffer.from('par'));
+                    return { statusCode: 200, headers: {}, body, abort: () => aborted.push(url) };
+                }
+                return response('payload');
+            },
+        } }).start({
+            urls: ['https://stalled.invalid/file', 'https://backup.invalid/file'],
+            destinationPath,
+            idleTimeoutMs: 30,
+        });
+
+        await expect(task.promise).resolves.toMatchObject({ filePath: destinationPath });
+        expect(aborted).toEqual(['https://stalled.invalid/file']);
+        expect(fs.readFileSync(destinationPath, 'utf8')).toBe('payload');
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('传输中途取消：立即中止请求、不再试其他地址，并删除临时文件', async () => {
+        const root = await tempRoot();
+        const destinationPath = path.join(root, 'file.bin');
+        const aborted = [];
+        const calls = [];
+        let firstChunk;
+        const gotChunk = new Promise(resolve => { firstChunk = resolve; });
+        const task = createDownload({ transport: {
+            request: async url => {
+                calls.push(url);
+                const body = new Readable({ read() {} });
+                body.push(Buffer.from('partial'));
+                return { statusCode: 200, headers: {}, body, abort: () => aborted.push(url) };
+            },
+        } }).start({
+            urls: ['https://slow.invalid/file', 'https://backup.invalid/file'],
+            destinationPath,
+            idleTimeoutMs: 0,
+            onProgress: () => firstChunk(),
+        });
+
+        await gotChunk;
+        const startedAt = Date.now();
+        expect(task.cancel()).toBe(true);
+        await expect(task.promise).rejects.toMatchObject({ code: 'DOWNLOAD_CANCELLED' });
+        expect(Date.now() - startedAt).toBeLessThan(1000);
+        expect(aborted).toEqual(['https://slow.invalid/file']);
+        expect(calls).toEqual(['https://slow.invalid/file']);
+        expect(fs.readdirSync(root)).toEqual([]);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
     it('idleTimeoutMs <= 0 关闭停顿检测', async () => {
         const root = await tempRoot();
         const destinationPath = path.join(root, 'file.bin');

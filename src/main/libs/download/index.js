@@ -36,11 +36,13 @@ function createElectronNetTransport() {
                 signal?.addEventListener('abort', onAbort, { once: true });
                 request.on('response', response => {
                     settled = true;
+                    // 等响应头的超时与取消到此结束；传输阶段的停顿与取消由调用方经 abort 处理
                     cleanup();
                     resolve({
                         statusCode: response.statusCode,
                         headers: response.headers,
                         body: response,
+                        abort: () => request.abort(),
                     });
                 });
                 request.on('error', error => {
@@ -126,29 +128,37 @@ function createDownload(dependencies = {}) {
                             throw errorWithCode('DOWNLOAD_HTTP_ERROR', `Download returned HTTP ${response.statusCode}`);
                         }
                         const totalValue = Number(headerValue(response.headers, 'content-length'));
-                        // 响应头到了才开始计时：body 传输阶段没有任何超时保护，服务端发完头就卡住时
-                        // 没有这个看门狗，promise 永远不会 settle
+                        // 传输阶段的中止只有一条路径：停顿超时与取消都以对应错误结束读取流，再中止网络请求
+                        // （只销毁读取流时底层请求仍会挂着）。顺序不能反：先中止请求时 Electron 的响应流
+                        // 会先以 ERR_STREAM_PREMATURE_CLOSE 结束，pipeline 拿不到这里给的错误
+                        const stopTransfer = error => {
+                            response.body?.destroy?.(error);
+                            try { response.abort?.(); } catch { /* 已结束的请求 */ }
+                        };
                         let touch = () => {};
                         const progress = createProgressTransform({
                             total: Number.isFinite(totalValue) ? totalValue : undefined,
                             onProgress,
                             onChunk: () => touch(),
                         });
+                        // 响应头到了才开始计时：每收到一片数据重置，连续 idleTimeoutMs 无数据即停顿
                         const guard = createStallGuard({
                             idleTimeoutMs,
-                            onStall: () => {
-                                response.body?.destroy?.(errorWithCode(
-                                    'DOWNLOAD_TIMEOUT',
-                                    `Download stalled: no data for ${idleTimeoutMs}ms after ${progress.getTransferred()} bytes (${url})`,
-                                ));
-                            },
+                            onStall: () => stopTransfer(errorWithCode(
+                                'DOWNLOAD_TIMEOUT',
+                                `Download stalled: no data for ${idleTimeoutMs}ms after ${progress.getTransferred()} bytes (${url})`,
+                            )),
                         });
+                        const onCancel = () => stopTransfer(errorWithCode('DOWNLOAD_CANCELLED', 'Download cancelled'));
+                        if (controller.signal.aborted) onCancel();
+                        else controller.signal.addEventListener('abort', onCancel, { once: true });
                         touch = guard.arm;
                         guard.arm();
                         try {
                             await pipeline(response.body, progress, streamFs.createWriteStream(tempPath));
                         } finally {
                             guard.stop();
+                            controller.signal.removeEventListener('abort', onCancel);
                         }
                         const stat = await fsApi.stat(tempPath);
                         await fsApi.rm(destinationPath, { force: true });
