@@ -250,4 +250,68 @@ describe('main download library: startBatch', () => {
         expect(events.some(e => e.state === 'cancelled')).toBe(true);
         await fsp.rm(root, { recursive: true, force: true });
     });
+
+    /** 请求挂起直到被取消；quick 中的地址立即返回 payload */
+    function hangingTransport(quick = []) {
+        const pending = [];
+        return {
+            pending,
+            transport: {
+                request: (url, { signal }) => {
+                    if (quick.includes(url)) return Promise.resolve(response('payload'));
+                    pending.push(url);
+                    return new Promise((_, reject) => {
+                        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { code: 'ABORT_ERR' })), { once: true });
+                    });
+                },
+            },
+        };
+    }
+
+    it('并发下载时 cancel 取消全部进行中的文件；未开始的文件记为 cancelled', async () => {
+        const root = await tempRoot();
+        const { transport, pending } = hangingTransport();
+        const events = [];
+        const files = [1, 2, 3, 4].map(i => ({ urls: [`https://a.invalid/f${i}`], destinationPath: path.join(root, `f${i}.bin`) }));
+        const task = createDownload({ transport }).startBatch({ files, concurrency: 3, onFileChange: event => events.push(event) });
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(pending).toHaveLength(3);
+        task.cancel();
+        const { results } = await task.promise;
+        expect(results.map(r => r.state)).toEqual(['cancelled', 'cancelled', 'cancelled', 'cancelled']);
+        expect(events.filter(e => e.state === 'cancelled').map(e => e.index).sort()).toEqual([0, 1, 2, 3]);
+        expect(pending).toHaveLength(3);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('并发中一个文件先完成后再 cancel，其余进行中的文件仍被取消', async () => {
+        const root = await tempRoot();
+        const { transport } = hangingTransport(['https://a.invalid/f1']);
+        const files = [1, 2, 3].map(i => ({ urls: [`https://a.invalid/f${i}`], destinationPath: path.join(root, `f${i}.bin`) }));
+        const task = createDownload({ transport }).startBatch({ files, concurrency: 3 });
+
+        await new Promise(resolve => setTimeout(resolve, 50));
+        task.cancel();
+        const { results } = await task.promise;
+        expect(results.map(r => r.state)).toEqual(['completed', 'cancelled', 'cancelled']);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
+    it('integrity 复用 libs/integrity：算法名可写 SHA-256，摘要可带 md5- 前缀', async () => {
+        const root = await tempRoot();
+        const sha = createHash('sha256').update('payload').digest('hex');
+        const md5 = createHash('md5').update('payload').digest('hex');
+        const task = createDownload({ transport: { request: async () => response('payload') } }).startBatch({
+            files: [
+                { urls: ['https://a.invalid/f1'], destinationPath: path.join(root, 'f1.bin'), integrity: { algorithm: 'SHA-256', expected: sha } },
+                { urls: ['https://a.invalid/f2'], destinationPath: path.join(root, 'f2.bin'), integrity: { algorithm: 'md5', expected: `md5-${md5}` } },
+                { urls: ['https://a.invalid/f3'], destinationPath: path.join(root, 'f3.bin'), integrity: { algorithm: 'md5', expected: '0'.repeat(32) } },
+            ],
+        });
+        const { results } = await task.promise;
+        expect(results.map(r => r.state)).toEqual(['completed', 'completed', 'failed']);
+        expect(fs.existsSync(path.join(root, 'f3.bin'))).toBe(false);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
 });

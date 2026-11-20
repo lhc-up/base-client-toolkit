@@ -1,9 +1,10 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
+const integrity = require('../integrity');
 
 function errorWithCode(code, message, cause) {
     return Object.assign(new Error(message, cause ? { cause } : undefined), { code });
@@ -214,27 +215,18 @@ function createDownload(dependencies = {}) {
         }
 
         let cancelled = false;
-        let current = null;
+        // 进行中的下载：并发时同时有多个，取消要逐个取消
+        const active = new Set();
         const emit = event => {
             try { onFileChange?.(event); } catch { /* 回调异常不影响下载 */ }
         };
         const results = new Array(files.length);
         let nextIndex = 0;
 
-        async function hashFile(filePath, algorithm) {
-            return new Promise((resolve, reject) => {
-                const hash = createHash(algorithm);
-                const stream = streamFs.createReadStream(filePath);
-                stream.on('data', chunk => hash.update(chunk));
-                stream.on('error', reject);
-                stream.on('end', () => resolve(hash.digest('hex')));
-            });
-        }
-
         async function verify(filePath, spec) {
             const { algorithm = 'sha256', expected } = spec.integrity;
-            const actual = await hashFile(filePath, algorithm);
-            return actual === String(expected).replace(new RegExp(`^${algorithm}-`, 'i'), '').toLowerCase();
+            const { valid } = await integrity.verify({ filePath, algorithm, expected });
+            return valid;
         }
 
         async function runOne(index, spec) {
@@ -256,9 +248,14 @@ function createDownload(dependencies = {}) {
                     headers: spec.headers,
                     onProgress: progress => emit({ ...base, state: 'progress', ...progress }),
                 });
-                current = handle;
+                active.add(handle);
                 if (cancelled) handle.cancel();
-                const result = await handle.promise;
+                let result;
+                try {
+                    result = await handle.promise;
+                } finally {
+                    active.delete(handle);
+                }
                 if (spec.integrity && !(await verify(result.filePath, spec))) {
                     await fsApi.rm(result.filePath, { force: true });
                     throw errorWithCode('DOWNLOAD_INTEGRITY_MISMATCH', `integrity check failed: ${spec.destinationPath}`);
@@ -272,8 +269,6 @@ function createDownload(dependencies = {}) {
                 }
                 emit({ ...base, state: 'failed', error: { code: error.code || 'DOWNLOAD_FAILED', message: error.message } });
                 return { state: 'failed' };
-            } finally {
-                current = null;
             }
         }
 
@@ -287,6 +282,12 @@ function createDownload(dependencies = {}) {
             };
             const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, files.length));
             await Promise.all(Array.from({ length: workerCount }, worker));
+            // 取消时尚未开始的文件记为 cancelled，结果不留空位
+            for (let index = 0; index < files.length; index += 1) {
+                if (results[index]) continue;
+                emit({ index, destinationPath: files[index].destinationPath, state: 'cancelled' });
+                results[index] = { state: 'cancelled' };
+            }
             return { results };
         })();
 
@@ -295,7 +296,7 @@ function createDownload(dependencies = {}) {
             cancel() {
                 if (cancelled) return false;
                 cancelled = true;
-                if (current) current.cancel();
+                for (const handle of active) handle.cancel();
                 return true;
             },
         };

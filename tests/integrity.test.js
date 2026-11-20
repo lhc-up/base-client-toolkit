@@ -27,6 +27,17 @@ describe('async streaming integrity', () => {
         await fsp.rm(root, { recursive: true, force: true });
     });
 
+    it('期望摘要可带算法前缀（sha256- / md5-）', async () => {
+        const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'toolkit-integrity-'));
+        const filePath = path.join(root, 'a.bin');
+        await fsp.writeFile(filePath, 'payload');
+        const sha = createHash('sha256').update('payload').digest('hex');
+        const md5 = createHash('md5').update('payload').digest('hex');
+        expect((await integrity.verify({ filePath, expected: `sha256-${sha}` })).valid).toBe(true);
+        expect((await integrity.verify({ filePath, algorithm: 'md5', expected: `MD5-${md5}` })).valid).toBe(true);
+        await fsp.rm(root, { recursive: true, force: true });
+    });
+
     it('returns invalid for a mismatched digest', async () => {
         const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'toolkit-integrity-'));
         const filePath = path.join(root, 'file.txt');

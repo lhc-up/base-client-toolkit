@@ -37,7 +37,8 @@ async function verify({ filePath, algorithm = 'sha256', expected } = {}) {
         });
     }
     const normalized = normalizeAlgorithm(algorithm);
-    const normalizedExpected = String(expected || '').replace(/^sha256-/i, '').toLowerCase();
+    // 允许带算法前缀（如 sha256-xxx、md5-xxx）
+    const normalizedExpected = String(expected || '').replace(new RegExp(`^${normalized}-`, 'i'), '').toLowerCase();
     const { actual, size } = await digestFile(filePath, normalized);
     return {
         valid: actual === normalizedExpected,
