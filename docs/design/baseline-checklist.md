@@ -22,6 +22,7 @@
 | G7 preload 路径 | K12、F5、P5 | 跨 frame / toolkit / 项目，必须一起改 |
 | G8 Linux | K13、K14、F8 | 同一批 Linux / 龙芯验证，一起改一起测 |
 | G9 独立项 | K7、K9、K15、F4、F6、F7、P3、P6 | 无跨仓库耦合，可单独排 |
+| G10 包操作统一 | K16、F9、P8 | 复查发现整合客户端进不了首页（`issue()` 引用未定义变量、下载后的包没有入口）；根因是包的查找、转换散落在 toolkit 与三处业务代码，一起重构 |
 
 ## 2. toolkit 条目
 
@@ -42,6 +43,7 @@
 | K13 | P2 | 待确认 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 | `installApp` 增加可配置 dpkg 选项（如 `{ dpkgForce: ['overwrite'] }`），默认关闭；`installByDpkg` 与 `installByOpenShell` 两处都改 | Linux 验证 |
 | K14 | P2 | 待确认 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败 | 补提示与 `sleep`；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
 | K15 | P2 | 待确认 | Linux / 龙芯安装与 dpkg 流程缺少自动化与真机验证记录 | 与 F8 一起：建立 Linux 安装验证步骤与记录模板 | 真机记录 |
+| K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 
 ## 3. frame 条目
 
@@ -55,6 +57,7 @@
 | F6 | P1 | 待确认 | webpack 预设未规整（main 不处理资源、共用配置未抽取） | 结构整理，产物行为不变 | 产物对比 |
 | F7 | P1 | 待确认 | 与历史 base-client.bake 的行为差异未系统盘点 | 逐项梳理成文档，能对齐的对齐 | 文档 |
 | F8 | P2 | 待确认 | 龙芯（loong64）打包需自备 Electron 镜像源，frame 不内置 | 写入 README；是否内置镜像配置待定 | 龙芯验证 |
+| F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件 | 单测；两个项目打包与本地调试实测 |
 
 ## 4. 业务侧连带清理（底座修完后执行）
 
@@ -65,8 +68,9 @@
 | P3 | 待确认 | 问卷 `installDownloaded` 中前置的日志 flush 删除（`installApp` 会自己等） | K5 |
 | P4 | 已完成（2026-11-19） | 两个项目 `bc.config.js` 的 `parallel: false` 绕行是否保留，随 F3 的结论定 | F3 |
 | P5 | 已完成（2026-11-19） | 两个项目改用 frame 导出的路径常量 | K12 / F5 |
-| P6 | 待确认 | 问卷 `docs/base-client/已知问题.md` 的 B 类三条（跨上下文 Error、下载缓存、日志轮转）随上游修复删除 | K1 / K2 / K4 |
+| P6 | 已完成（2026-11-20） | 问卷 `docs/base-client/已知问题.md` 的 B 类三条（跨上下文 Error、下载缓存、日志轮转）随上游修复删除 | K1 / K2 / K4 |
 | P7 | 已完成（2026-11-19） | 问卷 `appInfo.publishTime` 改读单独注入的 `__BC_BUILD_TIME__`（不属于 `__BC_BUILD__`） | F2 |
+| P8 | 已完成（2026-11-20） | 两个项目改用 `libs/pkg` 与新包信息：启动页始终用随客户端下发的包（宿主版本）打开、显示宿主版本；删除「上次启动版本」记录与据此重启的逻辑；整合客户端 `update` 改为 `getPkg` / `downloadPkg` / `launch`（修复进不了首页），进入失败与下载的包不符时显示 `loadingError`；问卷保留「本地最新的包、失败回落内置包」规则 | K16 / F9 |
 
 ## 5. 全平台全架构验证矩阵
 
