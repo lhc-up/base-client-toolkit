@@ -17,6 +17,7 @@ const { resolveResource } = require('../resourceRoot');
 const { HOST_RUNTIME_KEY } = require('../../../shared/hostKeys');
 const { createPkgLib } = require('./createPkgLib');
 const { readPkgDescriptor } = require('./readPkgDescriptor');
+const { BUILTIN_PKG_DIR } = require('../../frameContract');
 
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -65,7 +66,7 @@ module.exports = createPkgLib({
     // 未建立宿主运行时（存量项目）时视为打包运行
     getHostRuntime: () => globalThis[Symbol.for(HOST_RUNTIME_KEY)] || {},
     // 内置目录：<资源根目录>/packages。调用时计算：资源根目录取决于宿主运行方式
-    getBuiltinDir: () => resolveResource('packages'),
+    getBuiltinDir: () => resolveResource(BUILTIN_PKG_DIR),
     getUpdateDir: () => getFilePathConfig().updatePackage,
     getCopyDir: () => path.join(os.tmpdir(), 'base-client', app.getName(), 'pkg-copies'),
 });

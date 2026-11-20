@@ -9,6 +9,7 @@
  */
 const path = require('path');
 const { HOST_RUNTIME_KEY } = require('../../shared/hostKeys');
+const { RESOURCES_DIR } = require('../frameContract');
 
 /**
  * 宿主是否本地调试。未建立宿主运行时（存量项目）时视为打包运行。
@@ -24,7 +25,7 @@ function isHostDev() {
  * @returns {string|null} 非 Electron 环境且非本地调试时为 null
  */
 function getResourceRoot() {
-    if (isHostDev()) return path.join(process.cwd(), 'resources');
+    if (isHostDev()) return path.join(process.cwd(), RESOURCES_DIR);
     return process.resourcesPath || null;
 }
 

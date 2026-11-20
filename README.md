@@ -192,6 +192,17 @@ win.loadURL(p.renderer);                                // 主页面；启动页
 `download` 下载到下载目录（默认 `Cache-Control: no-cache`，可传 `headers`、`integrity`），名称、环境、版本与预期不符时删除文件并抛错；
 卡住的下载由 `libs/download` 的空闲超时结束。`onProgress` 只在主进程内调用、不跨 IPC，节流由调用方决定。
 
+#### 与 frame 的约定
+
+frame 打包时按下面的名字放置文件，toolkit 运行时按同样的名字读取。两个包互不依赖、无法共享代码，
+名字定义在 `src/main/frameContract.js`（frame 侧为 `src/paths.js`），两边的单测都断言这些值；**改动时两边必须同时改**。
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `DESCRIPTOR_FILE` | `package.json` | 包描述文件（包根目录下、dev server 根地址下） |
+| `RESOURCES_DIR` | `resources` | 资源目录：本地调试为项目根目录下的 `resources/`，打包后为安装包的 `resources/` |
+| `BUILTIN_PKG_DIR` | `packages` | 资源目录下放内置包的子目录 |
+
 ### update capability
 
 只负责安装包（大版本）：暂存、校验、安装与退出。应用包（小版本）的查找、下载、清理见 `main/libs/pkg`。

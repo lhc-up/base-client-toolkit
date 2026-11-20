@@ -16,8 +16,8 @@
  * 已是绝对路径或完整地址的原样使用。页面与目录的命名只由 frame 决定，这里不出现。
  */
 const { PKG_SOURCE } = require('../../../shared/pkgSource');
+const { DESCRIPTOR_FILE } = require('../../frameContract');
 
-const DESCRIPTOR_FILE = 'package.json';
 const PREFIX = '[包]';
 const SOURCE_TYPES = Object.values(PKG_SOURCE);
 const REQUIRED_FIELDS = Object.freeze({
@@ -454,4 +454,4 @@ function createPkgLib(deps) {
     return { get, download, removeOtherVersions, parseDevSources };
 }
 
-module.exports = { createPkgLib, DESCRIPTOR_FILE };
+module.exports = { createPkgLib };
