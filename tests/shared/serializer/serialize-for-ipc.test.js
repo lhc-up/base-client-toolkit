@@ -42,6 +42,30 @@ describe('serializeForIpc', () => {
         expect(() => structuredClone(serializeForIpc(weird))).not.toThrow();
     });
 
+    it('Map / Set 保留类型，其中不可克隆的键和值逐项换成占位符（结果可 structured clone）', () => {
+        const fn = function named() {};
+        const map = new Map([['fn', fn], [Symbol('k'), 1], ['ok', new Date(0)], ['n', NaN]]);
+        const set = new Set([1, Promise.resolve(), () => {}]);
+        const out = serializeForIpc({ map, set });
+
+        expect(out.map).toBeInstanceOf(Map);
+        expect(out.set).toBeInstanceOf(Set);
+        expect(out.map.get('fn')).toBe(serialize(fn));
+        expect(out.map.get('ok')).toBeInstanceOf(Date);
+        expect(Number.isNaN(out.map.get('n'))).toBe(true);
+        expect([...out.map.keys()].some(k => typeof k === 'symbol')).toBe(false);
+        expect([...out.set].every(v => typeof v !== 'function' && !(v instanceof Promise))).toBe(true);
+        expect(() => structuredClone(out)).not.toThrow();
+    });
+
+    it('Map / Set 自引用不死循环，结果可 structured clone', () => {
+        const map = new Map();
+        map.set('self', map);
+        const set = new Set();
+        set.add(set);
+        expect(() => structuredClone(serializeForIpc({ map, set }))).not.toThrow();
+    });
+
     it('handles circular references without throwing', () => {
         const obj = {};
         obj.self = obj;

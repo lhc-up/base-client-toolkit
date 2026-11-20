@@ -64,16 +64,23 @@ function serialize(value, opts, { cloneSafe = false } = {}) {
             if (typeof WeakSet !== 'undefined' && v instanceof WeakSet) return ph.weakSetPlaceholder();
             if (ad.isWindowLike(v)) return ph.windowPlaceholder();
             if (ad.isDomNode(v)) return ph.domPlaceholder(v);
-            // structured clone 原生支持 Map / Set：IPC 路径原样透传，不进递归
+            // structured clone 原生支持 Map / Set，但其中的值未必可克隆（函数、Symbol、Promise 等会让发送整体失败）：
+            // IPC 路径保留类型、逐项按同一规则处理；日志路径转成对象 / 数组
             if (v instanceof Map) {
-                if (cloneSafe) return v;
                 seen.set(v, path);
-                return ad.adaptMap(v, (x) => walk(x, depth + 1, path));
+                const recurse = (x) => walk(x, depth + 1, path);
+                if (!cloneSafe) return ad.adaptMap(v, recurse);
+                const out = new Map();
+                for (const [k, val] of v) out.set(recurse(k), recurse(val));
+                return out;
             }
             if (v instanceof Set) {
-                if (cloneSafe) return v;
                 seen.set(v, path);
-                return ad.adaptSet(v, (x) => walk(x, depth + 1, path));
+                const recurse = (x) => walk(x, depth + 1, path);
+                if (!cloneSafe) return ad.adaptSet(v, recurse);
+                const out = new Set();
+                for (const val of v) out.add(recurse(val));
+                return out;
             }
         } catch (e) {
             reportError(`adapter threw: ${e.message}`, path);
