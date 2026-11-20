@@ -197,10 +197,10 @@ toolkit 先复制为 `.asar` 临时副本再加载：
 选包与加载统一前缀 `[包]`，每个包每次选择输出一组，保证事后能还原「为什么加载了它」：
 
 ```
-[包] questionaire：本地调试，依据配置 BC_DEV_PKG_SOURCES，来源=semver
+[包] questionaire：本地调试，依据宿主运行时 devPkgSources，来源=semver
 [包] questionaire：下载目录命中 questionaire-test-v2.7.3.asar
 [包] questionaire：已选定 { name, version, env, source, main, renderer }
-[包] eachinacoreframe：本地调试，默认来源，来源=devServer，url=http://localhost:8066/
+[包] eachinacoreframe：本地调试，依据宿主运行时 devPkgSources，来源=devServer，url=http://localhost:8066/
 [包] demochild：已将 D:/Downloads/demochild-test-v1.0.0.asax 复制为临时副本 ...
 [包] demochild：指定的包与预期不符，照常加载：env=test（预期 prod）
 ```

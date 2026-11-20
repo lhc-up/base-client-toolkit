@@ -112,7 +112,8 @@ function createPkgLib(deps) {
         const configured = isHostDev && devPkgSources ? devPkgSources[name] : undefined;
         const source = configured ? { ...configured } : { type: PKG_SOURCE.SEMVER };
         const mode = isHostDev ? '本地调试' : '打包运行';
-        const basis = configured ? '依据配置 BC_DEV_PKG_SOURCES' : '默认来源';
+        // 本地调试的来源配置由宿主写入（自身包的默认项 + .env 的 BC_DEV_PKG_SOURCES），这里分不清两者
+        const basis = configured ? '依据宿主运行时 devPkgSources' : '默认来源';
         const detail = source.url ? `，url=${source.url}` : source.path ? `，path=${source.path}` : '';
         logger.info(`${PREFIX} ${name}：${mode}，${basis}，来源=${source.type}${detail}`);
         return source;
