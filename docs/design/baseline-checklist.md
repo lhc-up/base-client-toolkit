@@ -20,7 +20,7 @@
 | G5 构建信息 | F1、F2、P2 | 同一处 build-info；业务侧的 `?? env` 兜底与 frame 兜底重复 |
 | G6 版本声明 | F3、P4 | 对齐 Node 版本后，业务侧 `parallel: false` 的绕行是否保留一起定 |
 | G7 preload 路径 | K12、F5、P5 | 跨 frame / toolkit / 项目，必须一起改 |
-| G8 Linux | K13、K14、F8、F11 | 同一批 Linux / 龙芯验证，一起改一起测 |
+| G8 Linux | K13、K14、F8、F11、F12 | 同一批 Linux / 龙芯验证，一起改一起测 |
 | G9 独立项 | K7、K9、K17、K18、F4、F6、F7、P3、P6、P9、P10、P11 | 无跨仓库耦合，可单独排（K15 已并入 §5） |
 | G10 包操作统一 | K16、F9、P8 | 复查发现整合客户端进不了首页（`issue()` 引用未定义变量、下载后的包没有入口）；根因是包的查找、转换散落在 toolkit 与三处业务代码，一起重构 |
 
@@ -62,6 +62,7 @@
 | F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件。复查补全：与 toolkit 约定的目录名、描述文件名集中定义，README 列出，两边单测断言（frame `8ff35c4`、toolkit `df19dc2`） | 单测；两个项目打包与本地调试实测 |
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
 | F11 | P2 | 待确认 | 仓库无 `.gitattributes`，在 Windows 上发布时 `bin/base-client.js` 首行带 `
+| F12 | P1 | 待确认 | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64 |
 `，Linux / mac 上 `#!/usr/bin/env node
 ` 无法执行 | 加 `.gitattributes` 固定 `bin` 等脚本为 LF（toolkit 一并加）；发布前检查 | Linux / mac 上执行 `base-client` |
 
