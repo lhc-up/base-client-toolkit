@@ -64,7 +64,7 @@
 | F11 | P2 | 已完成（2026-11-21，frame `b252bbb`） | frame 无 `.gitattributes`，Windows（`core.autocrlf=true`）检出后 `bin/base-client.js` 首行为 `node
 `，从这份工作区发布或 yalc 推包后 Linux / mac 报 `/usr/bin/env: 'node
 '` 无法执行（本机全新克隆 + `npm pack` 实测复现）。shell 模板生成时已转 LF，不受影响；toolkit 无可执行脚本 | 新增 `.gitattributes`（`bin/**`、`*.sh` 固定 LF）；单测断言 bin 首行不含回车；frame 补 `prepublishOnly: npm test`（原来没有） | 修复后全新克隆与 `npm pack` 产物首行均为 LF；CRLF 时单测失败 |
-| F12 | P1 | 待确认 | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64 |
+| F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制 | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 `，Linux / mac 上 `#!/usr/bin/env node
 ` 无法执行 | 加 `.gitattributes` 固定 `bin` 等脚本为 LF（toolkit 一并加）；发布前检查 | Linux / mac 上执行 `base-client` |
@@ -160,5 +160,5 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 1. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
 2. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
 3. F7（bake 差异盘点）：用户要求先跳过；
-4. F12（Linux x64 安装包文件名改 x64）：用户要求放在最后处理，届时再按「现状 / 如何修改 / 效果」确认（影响点已排查，见 F12 行）；
+4. ~~F12（Linux x64 安装包文件名改 x64）~~：不改，文件名与包内 Architecture 保持一致；
 5. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
