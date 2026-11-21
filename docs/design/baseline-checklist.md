@@ -72,14 +72,14 @@
 |---|---|---|---|
 | P1 | 已完成（2026-11-19，问卷 `02fff48f`） | 两个宿主在注册 `store` 时追加 `setFile` / `removeFile` 同步别名的绕行代码删除 | K3 |
 | P2 | 已完成（2026-11-19） | 两个项目 `appInfo` 中 `envName: __BC_BUILD__.envName ?? __BC_BUILD__.env` 的兜底删除 | F1 |
-| P3 | 待确认 | 问卷 `installDownloaded` 中前置的日志 flush 删除（`installApp` 会自己等） | K5 |
+| P3 | 已完成（2026-11-21，问卷 `9db663c3`） | 问卷 `installDownloaded` 中前置的日志 flush 删除（`installApp` 会自己等），toolkit 安装过程的日志不再丢失；打包实测待业务侧统一跑 | K5 |
 | P4 | 已完成（2026-11-19） | 两个项目 `bc.config.js` 的 `parallel: false` 绕行是否保留，随 F3 的结论定 | F3 |
 | P5 | 已完成（2026-11-19） | 两个项目改用 frame 导出的路径常量 | K12 / F5 |
 | P6 | 已完成（2026-11-20） | 问卷 `docs/base-client/已知问题.md` 的 B 类三条（跨上下文 Error、下载缓存、日志轮转）随上游修复删除 | K1 / K2 / K4 |
 | P7 | 已完成（2026-11-19） | 问卷 `appInfo.publishTime` 改读单独注入的 `__BC_BUILD_TIME__`（不属于 `__BC_BUILD__`） | F2 |
 | P8 | 已完成（2026-11-20） | 两个项目改用 `libs/pkg` 与新包信息：启动页始终用随客户端下发的包（宿主版本）打开、显示宿主版本；删除「上次启动版本」记录与据此重启的逻辑；整合客户端 `update` 改为 `getPkg` / `downloadPkg` / `launch`（修复进不了首页），进入失败与下载的包不符时显示 `loadingError`；问卷保留「本地最新的包、失败回落内置包」规则 | K16 / F9 |
-| P9 | 待确认 | 问卷 `capability/resource` 两处 `Promise.race` 超时绕行删除（下载已有停顿超时与可中止的取消） | K10 |
-| P10 | 待确认 | 问卷资源下载编排改用 `libs/download` 的 `startBatch`，删除自写的并发、跳过与校验 | K11 |
+| P9 | 已完成（2026-11-21，问卷 `5ccc0fe7`） | 问卷 `capability/resource` 两处「单地址超时 × 地址数」的 `Promise.race` 整体超时删除：传输停顿 60 秒由 toolkit 中止并换下一个地址，慢速但持续有数据的大文件不再被打断；打包实测待统一跑 | K10 |
+| P10 | 已完成（2026-11-21，问卷 `6496ca87`） | 登录页资源包预下载 `downloadPackages` 改用 `startBatch`（无 hash 的资源包仍「存在即跳过」，事件不变）；修复停止时把取消记为失败的 ERROR 日志、全局停止标志被下一批重置导致旧批次继续下载。作答页 `storageFile` 不改（需先查资源包目录、无 hash 存在即用，`startBatch` 表达不了）；打包实测待统一跑 | K11 |
 | P11 | 待确认 | 两个项目 `checkSingleInstance()` 改为 `if (!checkSingleInstance()) return;` 一类的提前返回（主进程入口顶层能否 return、改用包一层函数还是条件包裹待定），删除问卷 `src/main/index.js` 中关于失效窗口的注释 | K18 |
 
 ## 5. 全平台全架构验证矩阵
@@ -145,7 +145,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 ### 8.3 下一步（建议顺序）
 
-1. 业务侧清理：P3、P9、P10、P11、8.2 的问卷测试（逐条确认后做）；
+1. 业务侧清理：P11、8.2 的问卷测试（逐条确认后做）；之后统一打包实测 P3、P9、P10、P11；
 2. 定 §5 矩阵范围与 F8 后做 G8 Linux 组（K13、K14、F8、F11），开始按矩阵验证；
 3. F6、F7 定范围后再排；
 4. F12（Linux x64 安装包文件名改 x64）：用户要求放在最后处理，届时再按「现状 / 如何修改 / 效果」确认（影响点已排查，见 F12 行）；
