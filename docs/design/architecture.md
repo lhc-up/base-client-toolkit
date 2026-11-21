@@ -40,6 +40,8 @@ toolkit **不是**统一运行时框架，也**不**向用户运行时代码注�
 
 违约后果（实测 Electron 22.3.1，2026-11-21）：元通道 `sendSync` 没有 listener 时**不抛异常，而是阻塞 preload**，直到主进程回收这次 IPC 的 event 对象（取决于主进程 GC：自然等待实测约 8 秒，手动 GC 约 2 秒），之后返回 `{ error: 'reply was never sent' }`；这段时间页面加载被卡住，`did-finish-load` 随之推迟。toolkit 识别这个返回值（以及 `sendSync` 抛异常）后，对应 bridge 降级并 `console.warn` 指明「主进程未调用 X.init」：`appService` 为空对象，`appNotice` 只有顶层 `subscribe` / `unsubscribe` / `once`（调用即抛出说明原因的错误）；两个 bridge 各自装配，一个未 init 或装配抛错不影响另一个。阻塞本身无法在 preload 侧避免，所以 opt-out 仍是正确用法。
 
+什么时候需要 opt-out：按本框架接入时，宿主用 `createHost` 挂载包，它内部一定会调用 `Service.init` 与 `Notice.init`（没有能力要注册时是空清单），preload 直接 `init()` 即可，不会出现上面的阻塞。只有不用 `createHost`、自行决定 init 哪些时，preload 才需要按实际 init 的情况 `init({ service: false })` / `init({ notice: false })`。preload 由项目自己的 `src/preload/index.js` 装配，完全不用 toolkit 的 bridge 时不调用本入口即可。
+
 ### 2.6 模块间依赖方向
 
 Service / Notice / BaseWindow 相互独立，互不 `require`。capability 之间允许 DAG 依赖，libs 可被 capability 复用但不得反向依赖 capability。capability 依然不得顶层 `require` Service / Notice。
