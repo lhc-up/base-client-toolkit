@@ -47,7 +47,6 @@
 | K18 | P1 | 已完成（2026-11-21） | `singleInstance` 抢锁失败只调用异步的 `app.quit()`、无返回值，调用方后面的代码在退出前继续执行（问卷：第二实例抢走截屏热键、启动服务发现） | 返回是否拿到锁（boolean），README 写明用法；业务侧改用见 P11 | 单测（K9 中发现） |
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 | K19 | P1 | 不改（2026-11-21 用户决定） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留） | 按框架接入时 `createHost` 一定会 init 两者，不会出现阻塞；只在文档写明何时需要 opt-out（`architecture.md` §2.5），不改代码 | — |
-| K20 | P2 | 待确认（原因未证实） | 本机经 HTTP 传输可执行文件明显变慢：75MB 安装包 22–44 秒（同大小随机数据 0.2 秒），换 nginx / 不写盘都一样，只与文件内容有关，原因未证实（疑似安全软件）。传输中数据块最长停顿约 1 秒，不会触发 `libs/download` 的 60 秒停顿检测，只是变慢。更正：2026-11-21 P3 实测时的「固定少 100,000 字节、下载失败」是模拟后台造成的——Node `http` 默认 keepAliveTimeout 5 秒，末尾约 100KB 延迟送达前服务端已关闭连接；nginx（默认 75 秒）或调大超时后完整 | 先确认变慢的原因：查本机安全 / 管控软件，并在无此类软件的机器、真实网络下对照；确认会影响现场后再定是否处理 | 对照测试 |
 
 ## 3. frame 条目
 
@@ -165,7 +164,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 ### 8.3 下一步（建议顺序）
 
-1. 稍后处理：K20（本机传输可执行文件变慢，先确认原因）；稍后验证：8.2.1 的 F6、P9；
+1. 稍后验证：8.2.1 的 F6、P9（需测试后台可访问）；
 2. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
 3. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
 4. F7（bake 差异盘点）：用户要求先跳过；
