@@ -46,6 +46,8 @@
 | K17 | P1 | 已完成（2026-11-21） | `os` 的 `linuxArch` / `linuxCore` / `lsbRelease` 注释写返回 string，实际返回带末尾换行的 Buffer，`env.getSystemDesc()` 拼出的描述每段夹着换行；注释示例 `Ubuntu 20.04` 也不对（`lsb_release -i -s` 只有发行版名） | 统一经 `execSync(cmd, { encoding: 'utf8' }).trim()`，失败记日志返回空串；改正 `env` 注释 | 单测（K9 中发现） |
 | K18 | P1 | 已完成（2026-11-21） | `singleInstance` 抢锁失败只调用异步的 `app.quit()`、无返回值，调用方后面的代码在退出前继续执行（问卷：第二实例抢走截屏热键、启动服务发现） | 返回是否拿到锁（boolean），README 写明用法；业务侧改用见 P11 | 单测（K9 中发现） |
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
+| K19 | P1 | 待确认（稍后处理） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留）：`sendSync` 无 listener 时要等主进程 GC 才返回，preload 侧无法避免，现在只能靠 `init({ service: false })` 跳过 | 待定 | — |
+| K20 | P1 | 待确认（推断，未证实） | 疑似安全软件干扰安装包下载：2026-11-21 P3 实测时本机经 HTTP（127.0.0.1）下载 75MB 安装包耗时约 25 秒且固定少 100,000 字节，`libs/download` 报 `All download URLs failed`；同内容改名 `.bin` 同样被截断，30MB 随机数据命名 `.exe` 则完整且 0.06 秒传完，判断为按内容识别可执行文件后检查 / 截断。未确认是哪个程序，也未确认真实网络下载是否同样受影响 | 先确认原因：查本机安全 / 管控软件，并在无此类软件的机器上重复对照；确认后再定是否需要应对（如校验失败的明确提示） | 对照测试 |
 
 ## 3. frame 条目
 
@@ -66,6 +68,7 @@
 '` 无法执行（本机全新克隆 + `npm pack` 实测复现）。shell 模板生成时已转 LF，不受影响；toolkit 无可执行脚本 | 新增 `.gitattributes`（`bin/**`、`*.sh` 固定 LF）；单测断言 bin 首行不含回车；frame 补 `prepublishOnly: npm test`（原来没有） | 修复后全新克隆与 `npm pack` 产物首行均为 LF；CRLF 时单测失败 |
 | F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制 | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
+| F14 | P1 | 待确认（稍后处理） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回（F8 后用错会报错并输出步骤，但步骤本身仍需手动执行），与 F13 相关 | 待定，可与 F13 一起考虑 | — |
 `，Linux / mac 上 `#!/usr/bin/env node
 ` 无法执行 | 加 `.gitattributes` 固定 `bin` 等脚本为 LF（toolkit 一并加）；发布前检查 | Linux / mac 上执行 `base-client` |
 
@@ -155,10 +158,16 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 （无。原记录的问卷 `npm test` 失败已编号 P12 并修复。）
 
+### 8.2.1 已改但未完全验证（稍后验证）
+
+- F6：两个项目只验证到启动页（测试后台当时不通），登录页 / 首页的样式与图片未在运行中检查；整合客户端产物文件名已带 contenthash、css 统一在 `css/` 下。
+- P9：作答页的资源下载需真实后台登录，打包实测只走到登录页资源包路径，作答页那段只有单测。
+
 ### 8.3 下一步（建议顺序）
 
-1. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
-2. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
-3. F7（bake 差异盘点）：用户要求先跳过；
-4. ~~F12（Linux x64 安装包文件名改 x64）~~：不改，文件名与包内 Architecture 保持一致；
-5. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
+1. 稍后处理：K19、F14（底座限制），K20（安装包下载疑似被安全软件截断，先确认原因）；稍后验证：8.2.1 的 F6、P9；
+2. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
+3. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
+4. F7（bake 差异盘点）：用户要求先跳过；
+5. ~~F12（Linux x64 安装包文件名改 x64）~~：不改，文件名与包内 Architecture 保持一致；
+6. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
