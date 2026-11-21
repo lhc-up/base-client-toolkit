@@ -52,7 +52,7 @@
 | F1 | P0 | 已完成（2026-11-19） | `BC_ENV_NAME` 无兜底、缺失时完全静默，`__BC_BUILD__.envName` 键直接不存在 | 缺失时回退为 `env` 的值，并输出一条构建警告（无法凭空推断展示名，回退值即为提示） | frame 单测；G5 业务侧 `?? env` 删除后回归 |
 | F2 | P0 | 已完成（2026-11-19） | 整体引用 `__BC_BUILD__` 会带入 `buildTime`，破坏产物 hash 稳定性与可复现性 | `buildTime` 不进 `__BC_BUILD__`，单独注入为 `__BC_BUILD_TIME__`；包描述文件仍写 `buildTime` | 单测：整体对象不含 `buildTime`；两个项目 `appInfo` 改读 `__BC_BUILD_TIME__`（P7） |
 | F3 | P0 | 已完成（2026-11-19） | `engines` 声明 Node ≥ 18.12，但实际 Node 16 可跑；同时 `css-minimizer-webpack-plugin` 8 官方要求 Node ≥ 20.9，两个项目靠 `parallel: false` 规避 | 核实真实下限并对齐 `engines`；README 明确区分「构建 Node 版本」与「Electron 内置 Node 版本」 | Node 20 / 22 下全量测试 |
-| F4 | P0 | 待确认 | 通用替换未覆盖 `typeof process.env.BC_xxx`：未声明时不会被替换为 `undefined` | 插件同时拦截 `typeof` 写法；若不可行，在 README「变量」一节写明该限制 | frame 单测 |
+| F4 | P0 | 已完成（2026-11-21，问题不成立） | 怀疑通用替换未覆盖 `typeof process.env.BC_xxx` | 实测已覆盖：webpack 的 typeof 钩子未处理时会把参数当成员链交给插件，未声明的变为 `typeof undefined` 并警告；补回归单测，README 写明（frame `a3455e7`） | frame 单测 |
 | F5 | P1 | 已完成（2026-11-19） | 生产项目需要自行拼 preload / 产物路径 | frame 导出路径常量（如 `@base-client/frame/paths`），与 K12 配对 | 两个项目改用后编译与运行通过 |
 | F6 | P1 | 待确认 | webpack 预设未规整（main 不处理资源、共用配置未抽取） | 结构整理，产物行为不变 | 产物对比 |
 | F7 | P1 | 待确认 | 与历史 base-client.bake 的行为差异未系统盘点 | 逐项梳理成文档，能对齐的对齐 | 文档 |
