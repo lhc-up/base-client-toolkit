@@ -373,3 +373,31 @@ describe('top-level subscribe/unsubscribe/once syntactic sugar', () => {
         expect(() => loadBuilder()()).toThrow(/collides with top-level API/);
     });
 });
+
+describe('buildAppNotice: 主进程未调用 Notice.init（K7）', () => {
+    it('返回 reply was never sent 时只保留顶层 API 并警告，不抛错', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockReturnValue({ error: 'reply was never sent' });
+        const api = loadBuilder()();
+        expect(Object.keys(api).sort()).toEqual(['once', 'subscribe', 'unsubscribe']);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toMatch(/appNotice 未装配：主进程未调用 Notice\.init（reply was never sent）/);
+        expect(warn.mock.calls[0][0]).toMatch(/init\(\{ notice: false \}\)/);
+        warn.mockRestore();
+    });
+
+    it('降级后调用顶层 API 抛出说明原因的错误', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockImplementation(() => { throw new Error('ipc broken'); });
+        const api = loadBuilder()();
+        expect(() => api.subscribe('foo.bar', () => {})).toThrow(/appNotice 未装配（主进程未调用 Notice\.init）/);
+        expect(() => api.once('foo.bar', () => {})).toThrow(/未装配/);
+        expect(() => api.unsubscribe('foo.bar')).toThrow(/未装配/);
+        warn.mockRestore();
+    });
+
+    it('主端返回失败信封仍抛出 revived Error', () => {
+        ipcRenderer.sendSync.mockReturnValue(errorEnvelope({ name: 'Error', message: 'schema failed' }));
+        expect(() => loadBuilder()()).toThrow(/schema failed/);
+    });
+});

@@ -38,7 +38,7 @@ toolkit **不是**统一运行时框架，也**不**向用户运行时代码注�
 
 `require('@base-client/toolkit/preload').init()` 必须只调用一次；同名 `exposeInMainWorld` 二次调用抛错，重复调用属违规。**opt-out 契约**：主端未 init Service / Notice 时，preload 必须 opt-out 对应 bridge，否则 `sendSync` 元通道无 listener。
 
-违约后果（实测 Electron 22，**不是死锁**）：Electron 立即报 `reply was never sent`，渲染进程照常响应（`executeJavaScript` 正常返回、DOM 正常）；但 **preload 脚本在 `sendSync` 处中断**，`appService` 与 `appNotice` **双双缺失**——`buildAppService()` 先执行先抛，连累 `appNotice` 一起装不上，即便它那侧主端已 init；该 webContents 的 **`did-finish-load` 永不触发**（用它控制窗口显示会导致窗口永不出现）。Electron 另有一条主进程侧告警 `called ipcRenderer.sendSync() with '<channel>' channel without listeners`，但它与 `preload-error` 事件都在业务默认不观察的位置，故渲染层通常要到第一个 `appService.x()` 调用处才以 TypeError 暴露，离根因很远。
+违约后果（实测 Electron 22.3.1，2026-11-21）：元通道 `sendSync` 没有 listener 时**不抛异常，而是阻塞 preload**，直到主进程回收这次 IPC 的 event 对象（取决于主进程 GC：自然等待实测约 8 秒，手动 GC 约 2 秒），之后返回 `{ error: 'reply was never sent' }`；这段时间页面加载被卡住，`did-finish-load` 随之推迟。toolkit 识别这个返回值（以及 `sendSync` 抛异常）后，对应 bridge 降级并 `console.warn` 指明「主进程未调用 X.init」：`appService` 为空对象，`appNotice` 只有顶层 `subscribe` / `unsubscribe` / `once`（调用即抛出说明原因的错误）；两个 bridge 各自装配，一个未 init 或装配抛错不影响另一个。阻塞本身无法在 preload 侧避免，所以 opt-out 仍是正确用法。
 
 ### 2.6 模块间依赖方向
 
@@ -251,7 +251,7 @@ Node 区间（纯导出值，可实测核对 process.versions.node）
 
 ### 8.5 preload 聚合入口契约
 
-`src/preload/index.js` 承担 `exposeInMainWorld` 样板与 opt-out 装配：`init()` 默认装配 `appService` / `appNotice`，`init({ service: false })` / `init({ notice: false })` 跳过对应 bridge。关键契约：主端未 init 时必须 opt-out（违约后果见 §2.5，另见 `known-limitations.md` 关于该契约本身的缺陷）；`init()` 只能调一次；capability / enhance 永远不通过聚合入口暴露；`exposeAPI` 对外导出供自定义 bridge 复用。
+`src/preload/index.js` 承担 `exposeInMainWorld` 样板与 opt-out 装配：`init()` 默认装配 `appService` / `appNotice`，`init({ service: false })` / `init({ notice: false })` 跳过对应 bridge。关键契约：主端未 init 时应 opt-out（违约后果见 §2.5：preload 阻塞到主进程 GC，之后该 bridge 降级并警告）；两个 bridge 各自装配，全部尝试后抛出第一个装配错误；`init()` 只能调一次；capability / enhance 永远不通过聚合入口暴露；`exposeAPI` 对外导出供自定义 bridge 复用。
 
 ### 8.6 测试目录组织
 

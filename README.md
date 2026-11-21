@@ -130,6 +130,10 @@ Notice.init({ userSchemas: [download.noticeSchema, archive.noticeSchema] });
 require('@base-client/toolkit/preload').init();
 ```
 
+主进程只 init 其中一个时，preload 要跳过另一个：`init({ service: false })` / `init({ notice: false })`。
+不跳过的话，preload 会卡住直到主进程 GC（实测约 2–8 秒），之后该 bridge 降级（`appService` 为空对象，
+`appNotice` 的顶层方法调用即报错）并在渲染端控制台警告「主进程未调用 X.init」。
+
 ### download capability
 
 Service：`download.start(options) → { taskId }`，`download.cancel(taskId) → { accepted }`。

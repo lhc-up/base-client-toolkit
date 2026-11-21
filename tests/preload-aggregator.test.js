@@ -121,4 +121,46 @@ describe('preload aggregator: init()', () => {
         expect(global.window.appNotice).toBeDefined();
         delete global.window;
     });
+
+    it('Service 未 init：appService 降级，appNotice 照常装配（K7）', () => {
+        Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockImplementation((channel) => {
+            if (channel === 'service:getServiceList') return { error: 'reply was never sent' };
+            return { ok: true, data: [{ namespace: 'foo', events: ['ping'] }] };
+        });
+        const { init } = require('../src/preload/index.js');
+        init();
+        const exposed = Object.fromEntries(contextBridge.exposeInMainWorld.mock.calls);
+        expect(exposed.appService).toEqual({});
+        expect(typeof exposed.appNotice.foo.on).toBe('function');
+        warn.mockRestore();
+    });
+
+    it('一个 bridge 装配抛错不影响另一个，全部尝试后抛出第一个错误（K7）', () => {
+        Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
+        ipcRenderer.sendSync.mockImplementation((channel) => {
+            if (channel === 'service:getServiceList') {
+                return { ok: false, error: { name: 'Error', message: 'service meta failed' } };
+            }
+            return { ok: true, data: [] };
+        });
+        const { init } = require('../src/preload/index.js');
+        expect(() => init()).toThrow(/service meta failed/);
+        const names = contextBridge.exposeInMainWorld.mock.calls.map(c => c[0]);
+        expect(names).toEqual(['appNotice']);
+    });
+
+    it('两个都抛错：抛出第一个，第二个 console.error（K7）', () => {
+        Object.defineProperty(process, 'contextIsolated', { value: true, configurable: true });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockImplementation(channel => ({
+            ok: false, error: { name: 'Error', message: `${channel} failed` },
+        }));
+        const { init } = require('../src/preload/index.js');
+        expect(() => init()).toThrow(/service:getServiceList failed/);
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(String(error.mock.calls[0][1])).toMatch(/notice:getSchema failed/);
+        error.mockRestore();
+    });
 });

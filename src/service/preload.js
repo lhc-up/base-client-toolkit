@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron');
 const { serializeForIpc } = require('../shared/serializer');
 const { reviveError } = require('../shared/serializer/reviveError');
+const { requestMetaSync } = require('../shared/metaChannel');
 const {
     META_LIST_CHANNEL, SERIALIZER_REPORT_CHANNEL, asyncChannel, syncChannel,
 } = require('./protocol');
@@ -139,13 +140,25 @@ function buildSyncCaller(ns, name) {
  * 若渲染端把 `.foo()` 的 Promise 直接赋给 template 会渲染成 `[object Promise]`，
  * 且无 runtime 报错——常见踩点，切勿混淆。
  *
+ * **主进程未调用 `Service.init`**：返回空对象并 `console.warn`，不抛错（不影响同一 preload 里的
+ * appNotice 装配）。元通道请求会先阻塞到主进程 GC（见 `shared/metaChannel.js`），
+ * 不需要 appService 时应在 preload 中 `init({ service: false })`。
+ *
  * @returns {Object} appService
- * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error
+ * @throws {Error} 主端返回失败信封时抛出 revived Error
  */
 function buildAppService() {
-    const envelope = ipcRenderer.sendSync(META_LIST_CHANNEL);
-    if (!envelope || !envelope.ok) {
-        throw reviveError(envelope && envelope.error);
+    const meta = requestMetaSync(ipcRenderer, META_LIST_CHANNEL);
+    if (!meta.initialized) {
+        console.warn(
+            `[base-client] appService 未装配：主进程未调用 Service.init（${meta.reason}）。` +
+            '不需要 appService 时在 preload 中 init({ service: false })，避免装配时的同步等待',
+        );
+        return {};
+    }
+    const envelope = meta.envelope;
+    if (!envelope.ok) {
+        throw reviveError(envelope.error);
     }
     const schemaList = envelope.data || [];
 

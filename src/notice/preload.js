@@ -1,5 +1,6 @@
 const { ipcRenderer } = require('electron');
 const { reviveError } = require('../shared/serializer/reviveError');
+const { requestMetaSync } = require('../shared/metaChannel');
 const { EVENT_CHANNEL, META_GET_SCHEMA_CHANNEL } = require('./protocol');
 
 // 顶层保留字：与 subscribe/unsubscribe/once 顶层语法糖共享同一命名空间字典
@@ -104,16 +105,28 @@ function buildNamespaceApi(namespace, eventSet, listeners) {
  * 注册的回调都能被同一 dispatcher 触发，可互相拆卸。namespace 名撞上顶层保留字
  * (subscribe/unsubscribe/once) 时构建抛错。
  *
+ * **主进程未调用 `Notice.init`**：只保留顶层 subscribe / unsubscribe / once（调用即抛出说明原因的错误）
+ * 并 `console.warn`，不抛错（不影响同一 preload 里的 appService 装配）。元通道请求会先阻塞到
+ * 主进程 GC（见 `shared/metaChannel.js`），不需要 appNotice 时应在 preload 中 `init({ notice: false })`。
+ *
  * @returns {Object} appNotice
- * @throws {Error} 元通道 envelope 为 error 或损坏时抛出 revived Error；
+ * @throws {Error} 主端返回失败信封时抛出 revived Error；
  *                 namespace 与顶层保留字冲突时抛错
  */
 function buildAppNotice() {
-    const envelope = ipcRenderer.sendSync(META_GET_SCHEMA_CHANNEL);
-    if (!envelope || !envelope.ok) {
-        throw reviveError(envelope && envelope.error);
+    const meta = requestMetaSync(ipcRenderer, META_GET_SCHEMA_CHANNEL);
+    let schemaList = [];
+    if (meta.initialized) {
+        if (!meta.envelope.ok) {
+            throw reviveError(meta.envelope.error);
+        }
+        schemaList = meta.envelope.data || [];
+    } else {
+        console.warn(
+            `[base-client] appNotice 未装配：主进程未调用 Notice.init（${meta.reason}）。` +
+            '不需要 appNotice 时在 preload 中 init({ notice: false })，避免装配时的同步等待',
+        );
     }
-    const schemaList = envelope.data || [];
 
     const listeners = new Map();
     const appNotice = {};
@@ -131,6 +144,11 @@ function buildAppNotice() {
 
     const resolveNsApi = (fullEventName, api) => {
         const { namespace, eventName } = parseFullEventName(fullEventName);
+        if (!meta.initialized) {
+            throw new Error(
+                `Notice ${api}: appNotice 未装配（主进程未调用 Notice.init）`,
+            );
+        }
         const nsApi = appNotice[namespace];
         if (!nsApi) {
             throw new Error(

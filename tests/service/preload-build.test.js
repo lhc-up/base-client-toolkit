@@ -92,3 +92,24 @@ describe('buildAppService: API surface generation', () => {
         expect(typeof api.bar.bSync).toBe('function');
     });
 });
+
+describe('buildAppService: 主进程未调用 Service.init（K7）', () => {
+    it('返回 reply was never sent 时降级为空对象并警告，不抛错', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockReturnValue({ error: 'reply was never sent' });
+        const api = loadBuilder()();
+        expect(api).toEqual({});
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toMatch(/appService 未装配：主进程未调用 Service\.init（reply was never sent）/);
+        expect(warn.mock.calls[0][0]).toMatch(/init\(\{ service: false \}\)/);
+        warn.mockRestore();
+    });
+
+    it('sendSync 抛异常时同样降级', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        ipcRenderer.sendSync.mockImplementation(() => { throw new Error('ipc broken'); });
+        expect(loadBuilder()()).toEqual({});
+        expect(warn.mock.calls[0][0]).toMatch(/ipc broken/);
+        warn.mockRestore();
+    });
+});
