@@ -15,6 +15,8 @@ bake 里的每个功能，现在在 frame、toolkit 或两个项目的接入层�
 
 拿不准的标「存疑」。「缺失」均在 toolkit、frame、两个项目的接入层中按关键词搜过并抽查核实。
 
+**处理状态以 `baseline-checklist.md` §3.1 子清单为准**：下文 R1–R3、B1–B4 对应 F7-R1–R3、F7-B1–B4；存疑 S1–S8 依次对应 F7-S1（运行时解密）、F7-S2（加密范围）、F7-S3（键盘锁定）、F7-S4（加载失败通知）、F7-S5（no-sandbox）、F7-S6（宿主接入不一致）、F7-S7（vendor）、F7-S8（name 格式）；§3 待办未完成项对应 F7-T1–T4（资源加密并入 F7-S1 / S2）。
+
 路径简写：bake = `base-client.bake`，tk = toolkit，fr = frame，问卷 = `questionnaire-answer-v3.0`，整合 = `eachinaclientframe`。
 
 ## 1. 缺失（已核实）

@@ -58,7 +58,7 @@
 | F4 | P0 | 已完成（2026-11-21，问题不成立） | 怀疑通用替换未覆盖 `typeof process.env.BC_xxx` | 实测已覆盖：webpack 的 typeof 钩子未处理时会把参数当成员链交给插件，未声明的变为 `typeof undefined` 并警告；补回归单测，README 写明（frame `a3455e7`） | frame 单测 |
 | F5 | P1 | 已完成（2026-11-19） | 生产项目需要自行拼 preload / 产物路径 | frame 导出路径常量（如 `@base-client/frame/paths`），与 K12 配对 | 两个项目改用后编译与运行通过 |
 | F6 | P1 | 已完成（2026-11-21，frame `ae241e3`，问卷 `2005fe91`，整合 `fd31340`） | frame 预设太薄，两个项目各写一大段相同的 webpack 配置且已走样（文件名 hash、css 目录与 publicPath、图片类型不一致）；main 漏配 `toolkitExternals` 不报错，包里会打进独立的 toolkit | main 预设自动接入 `toolkitExternals`；renderer / web 合并后补图片字体规则、CSS 抽离到 `css/`、CSS 压缩、生产环境 contenthash 文件名，项目写了就以项目为准；导出 `styleLoader(ctx)`；问卷 web 端保留自己的规则（产物放在上下文目录下） | 单测；改前改后产物对比：问卷 web 端除构建时间外一致，main / preload 除构建时间外一致，renderer 文件一一对应、css 与 html 的引用全部可解析；两个项目启动页实际显示正常（测试后台不通，未进入登录页 / 首页） |
-| F7 | P1 | 盘点完成（2026-11-21），缺失项待逐条确认 | 与历史 base-client.bake 的功能差异未系统盘点 | 功能层面对照（不比较实现）：结果见 `bake-feature-inventory.md`。缺失 7 项（R1–R3 运行时、B1–B4 构建）、存疑 8 项、bake 待办未完成 5 项；逐条确认后再编号进清单 | 文档 |
+| F7 | P1 | 盘点完成（2026-11-21），问题见 §3.1 子清单 | 与历史 base-client.bake 的功能差异未系统盘点 | 功能层面对照（不比较实现），结果见 `bake-feature-inventory.md`；发现的问题记入 §3.1（F7-R / B / S / T），逐条确认 | 文档 |
 | F8 | P2 | 已完成（2026-11-21，frame `5a92f52`，问卷 `c10e0c6e`，整合 `ce930ab`） | 龙芯 Electron 镜像配置在两个项目各抄一份；官方 electron-builder 打 loong64 时不报错、悄悄打出标成 amd64 的包；打包步骤只写在 `.npmrc` 注释里且已过时 | frame 在 `--arch loong64` 时把龙芯镜像合并进打包预设（项目可覆盖）；`pack` / `installer` 打包前检查 builder-util 是否支持 loong64，不支持就停止并在控制台输出完整处理步骤；规则写在 frame `docs/build-target-resolution-contract.md`；删除两个项目的龙芯配置与 `.npmrc` | 单测；本机验证：官方版 builder 2.6 秒内停止且不清 dist，龙芯版 builder 识别为支持；合并后的配置与原项目配置一致。龙芯真机打包待 §5 |
 | F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件。复查补全：与 toolkit 约定的目录名、描述文件名集中定义，README 列出，两边单测断言（frame `8ff35c4`、toolkit `df19dc2`） | 单测；两个项目打包与本地调试实测 |
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
@@ -70,6 +70,33 @@
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
 `，Linux / mac 上 `#!/usr/bin/env node
 ` 无法执行 | 加 `.gitattributes` 固定 `bin` 等脚本为 LF（toolkit 一并加）；发布前检查 | Linux / mac 上执行 `base-client` |
+
+### 3.1 F7 子清单：bake 功能对照发现的问题
+
+来源：`bake-feature-inventory.md`（2026-11-21）。只列基线范围内（frame、toolkit 及其接入）的项；业务与部署相关的见该文档 §4，不在此处理。
+编号 `F7-` 前缀，状态规则同上，逐条确认后再改。
+
+| # | 归属 | 状态 | 问题 | 备注 |
+|---|---|---|---|---|
+| F7-R1 | 接入层（两个宿主） | 已完成（2026-11-21，问卷 `d515b706`，整合 `9d4b56b`） | 主进程未捕获的异常与 Promise 拒绝不写日志 | 用户决定不放 toolkit（全局监听会改变进程行为，属宿主决策）；两个宿主入口各自监听并记日志，不测默认行为 |
+| F7-R2 | 接入层（整合） | 暂缓（用户决定先不修） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
+| F7-R3 | 接入层（两个宿主） | 待确认 | 「打开系统时间设置」只支持 Windows，macOS / Linux 直接返回 `unsupported-platform`（bake 有 macOS 系统偏好、Linux gnome / dde / KDE 三种） | Linux / 龙芯上时间不对时，启动页「修改时间」只能提示手动修改 |
+| F7-B1 | frame | 待确认 | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 仅影响本地调试 |
+| F7-B2 | frame | 待确认 | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 仅影响本地调试 |
+| F7-B3 | frame | 待确认 | 生产构建不删除 console 输出（bake 有 `drop_console`） | 安装包保留 console 输出，体积略大 |
+| F7-B4 | frame | 待确认 | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 循环 import 不在构建期提示 |
+| F7-S1 | frame / toolkit | 存疑 | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有） | 两个项目都 `encrypt: false`，目前无影响；开启加密后页面会加载不出来 |
+| F7-S2 | frame | 存疑 | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 没找到收窄的说明 |
+| F7-S3 | toolkit / 接入层 | 存疑 | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 两个项目都没有调用方 |
+| F7-S4 | 接入层 | 存疑 | 页面加载失败（`did-fail-load`）不通知渲染层 | bake 渲染层也没有监听方 |
+| F7-S5 | 接入层 | 存疑 | `no-sandbox`：bake 设置，两个项目都没有（deb 安装脚本会给 chrome-sandbox 设 SUID） | 需 Linux / 龙芯真机验证（§5） |
+| F7-S6 | 接入层 | 存疑 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 | 没找到问卷有意不做的说明 |
+| F7-S7 | frame | 存疑 | 第三方库不单独拆 vendor 文件（bake 有） | 客户端影响很小 |
+| F7-S8 | frame | 存疑 | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | bake 待办未完成 |
+| F7-T1 | frame | 待确认 | 可视化打包（bake 待办，未完成） | — |
+| F7-T2 | frame | 待确认 | electron 镜像源（npmmirror）没有配置（bake 待办，未完成）；龙芯镜像已由 F8 内置 | — |
+| F7-T3 | frame | 待确认 | 本地 dev server 端口被占用时不会自动换端口（bake 待办，未完成），现在可用 `--port` 指定 | — |
+| F7-T4 | 接入层 | 待确认 | 云电脑环境下用户会话是否会串，没有结论（bake 待办，未完成） | 随机 partition 已去掉；问卷启动时清残留 cookie |
 
 ## 4. 业务侧连带清理（底座修完后执行）
 
@@ -167,6 +194,6 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 1. 稍后验证：8.2.1 的 F6、P9（需测试后台可访问）；
 2. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
 3. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
-4. F7：盘点完成，缺失项逐条找用户确认（`bake-feature-inventory.md`）；
+4. F7 子清单（§3.1）：F7-R1 已完成，F7-R2 暂缓（讨论结论已记录），其余逐条确认；
 5. ~~F12（Linux x64 安装包文件名改 x64）~~：不改，文件名与包内 Architecture 保持一致；
 6. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
