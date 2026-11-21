@@ -58,7 +58,7 @@
 | F5 | P1 | 已完成（2026-11-19） | 生产项目需要自行拼 preload / 产物路径 | frame 导出路径常量（如 `@base-client/frame/paths`），与 K12 配对 | 两个项目改用后编译与运行通过 |
 | F6 | P1 | 待确认 | webpack 预设未规整（main 不处理资源、共用配置未抽取） | 结构整理，产物行为不变 | 产物对比 |
 | F7 | P1 | 待确认 | 与历史 base-client.bake 的行为差异未系统盘点 | 逐项梳理成文档，能对齐的对齐 | 文档 |
-| F8 | P2 | 待确认 | 龙芯（loong64）打包需自备 Electron 镜像源，frame 不内置 | 写入 README；是否内置镜像配置待定 | 龙芯验证 |
+| F8 | P2 | 已完成（2026-11-21，frame `5a92f52`，问卷 `c10e0c6e`，整合 `ce930ab`） | 龙芯 Electron 镜像配置在两个项目各抄一份；官方 electron-builder 打 loong64 时不报错、悄悄打出标成 amd64 的包；打包步骤只写在 `.npmrc` 注释里且已过时 | frame 在 `--arch loong64` 时把龙芯镜像合并进打包预设（项目可覆盖）；`pack` / `installer` 打包前检查 builder-util 是否支持 loong64，不支持就停止并在控制台输出完整处理步骤；规则写在 frame `docs/build-target-resolution-contract.md`；删除两个项目的龙芯配置与 `.npmrc` | 单测；本机验证：官方版 builder 2.6 秒内停止且不清 dist，龙芯版 builder 识别为支持；合并后的配置与原项目配置一致。龙芯真机打包待 §5 |
 | F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件。复查补全：与 toolkit 约定的目录名、描述文件名集中定义，README 列出，两边单测断言（frame `8ff35c4`、toolkit `df19dc2`） | 单测；两个项目打包与本地调试实测 |
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
 | F11 | P2 | 待确认 | 仓库无 `.gitattributes`，在 Windows 上发布时 `bin/base-client.js` 首行带 `
@@ -120,7 +120,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 ## 7. 待决策
 
 1. ~~平台 / 架构矩阵的具体范围（§5）~~：已确定（2026-11-21），全部支持，本期验证 Windows x64 / ia32、Linux x64 / arm64 / loong64；本机只能验证 Windows。
-2. F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置。
+2. ~~F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置~~：frame 内置并加检查（2026-11-21）。
 3. ~~问卷 `docs/base-client/已知问题.md` 的既有更新提交（`39fcdf98`）保留还是撤销~~：已关闭，保留（2026-11-21）。
 
 ## 8. 进度记录（最近一次：2026-11-21）
@@ -154,7 +154,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 ### 8.3 下一步（建议顺序）
 
-1. 定 F8 后做 G8 Linux 组（K13、K14、F8、F11）的代码与单测；
+1. G8 Linux 组剩余的 K13、K14、F11：代码与单测（本机受限装不上 WSL，打不了 Linux 包，实测并入 §5）；
 2. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
 3. F6、F7 定范围后再排；
 4. F12（Linux x64 安装包文件名改 x64）：用户要求放在最后处理，届时再按「现状 / 如何修改 / 效果」确认（影响点已排查，见 F12 行）；
