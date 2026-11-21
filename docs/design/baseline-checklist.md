@@ -21,7 +21,7 @@
 | G6 版本声明 | F3、P4 | 对齐 Node 版本后，业务侧 `parallel: false` 的绕行是否保留一起定 |
 | G7 preload 路径 | K12、F5、P5 | 跨 frame / toolkit / 项目，必须一起改 |
 | G8 Linux | K13、K14、F8、F11 | 同一批 Linux / 龙芯验证，一起改一起测 |
-| G9 独立项 | K7、K9、F4、F6、F7、P3、P6、P9、P10 | 无跨仓库耦合，可单独排（K15 已并入 §5） |
+| G9 独立项 | K7、K9、K17、K18、F4、F6、F7、P3、P6、P9、P10、P11 | 无跨仓库耦合，可单独排（K15 已并入 §5） |
 | G10 包操作统一 | K16、F9、P8 | 复查发现整合客户端进不了首页（`issue()` 引用未定义变量、下载后的包没有入口）；根因是包的查找、转换散落在 toolkit 与三处业务代码，一起重构 |
 
 ## 2. toolkit 条目
@@ -36,13 +36,15 @@
 | K6 | P0 | 已完成（2026-11-19） | `log4js` / `electron-store` 声明 optional 但顶层 require，实际必装；`semver` 同理，只用 `installApp` 的消费者也被迫安装 | `log4js`、`electron-store`、`semver` 三个库都去掉 `optional`（顶层 require 即必装），只保留 `@vscode/sudo-prompt` 为 optional | 未安装 semver 时仅调用 `installApp` 可用；`npm ls` 无 invalid |
 | K7 | P0 | 已完成（2026-11-21） | preload 取 schema 时主端漏 init：实测 `sendSync` 不抛异常，阻塞到主进程 GC（约 2–8 秒）后返回 `{ error: 'reply was never sent' }`；toolkit 随后抛出无信息的错误，渲染层拿到 `undefined`，且 appNotice 一起装不上 | `shared/metaChannel` 把「抛异常 / 非信封应答」判为未 init：对应 bridge 降级（Service 空对象、Notice 只留顶层 API 且调用即报原因）+ `console.warn`；`init()` 两个 bridge 各自装配；保留 opt-out（阻塞无法在 preload 侧避免）；改正 `architecture.md` §2.5 | 单测（未 init 两种形态、互不连累）；Electron 22.3.1 实测两侧都未 init、只 init Notice 两种场景 |
 | K8 | P0 | 已完成（2026-11-19） | `serializeForIpc` 把 Date / RegExp / Map / Set / BigInt / NaN / ±Infinity 降级成字符串或普通对象，且无解码路径（`NaN` 最隐蔽：普通运算结果过 IPC 即变字符串） | 不加选项：IPC 路径按 structured clone 语义透传原生类型，Map / Set 保留类型并逐项处理（复查补全 `280922b`）；`safeStringify`（日志）保持现状；Error 的成对编解码不动 | 单测改为 structured-clone 语义；G4 两个项目确认消费面 |
-| K9 | P0 | 待确认 | `os` / `shortcut` / `singleInstance` 缺用法文档 | README 补最小示例与「`isLoongnix()` 会执行 `lsb_release`」等注意点 | 文档 |
+| K9 | P0 | 已完成（2026-11-21） | `os` / `singleInstance` 缺用法文档（`logger` / `store` / `shortcut` 已有）；`setPathConfig` 的时序约束不在 README | README 补 `os`、`singleInstance` 两节（含 `lsb_release` 同步执行、提前返回等注意点），`/main/paths` 一行补时序约束；不给 `/main` 加 libs 入口（保持包边界） | 文档 |
 | K10 | P1 | 已完成（2026-11-19） | `libs/download` 的 `timeoutMs` 只覆盖等响应头阶段，body 传输阶段无任何超时或 stall 检测，服务端卡住时 promise 永不 settle | 增加 `idleTimeoutMs`（默认 60s）：两次数据间隔超时即 abort；`timeoutMs` 保持原语义。复查补全（`b73f341`）：停顿与取消统一中止网络请求 | 单测模拟卡住的流，断言 abort 与 `DOWNLOAD_TIMEOUT` |
 | K11 | P1 | 已完成（2026-11-19） | `capability/download` 把编排、存储根、renderer 契约焊死，业务主进程无法复用；无「已存在且完整性匹配则跳过」语义 | 编排下沉 `libs/download` 批量入口（`files`、`skipIfValid`、并发、文件级回调）；`capability/download` 退为薄适配层。复查补全（`4ee6db9`）：`startBatch` 取消覆盖全部进行中任务，未开始的记为 cancelled，校验复用 `libs/integrity` | 单测 + 业务侧复用后删掉重写的编排 |
 | K12 | P1 | 已完成（2026-11-19） | `BaseWindow` 不提供 preload 路径默认值，每个项目重写同一段绝对路径 | 与 F5 配对：由 frame 导出产物路径常量，toolkit 不内置默认（保持不依赖 frame 的边界） | 两个项目改用后编译与运行通过 |
 | K13 | P2 | 待确认 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 | `installApp` 增加可配置 dpkg 选项（如 `{ dpkgForce: ['overwrite'] }`），默认关闭；`installByDpkg` 与 `installByOpenShell` 两处都改 | Linux 验证 |
 | K14 | P2 | 待确认 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败 | 补提示与 `sleep`，经 `sh -c` 执行，安装包路径作为参数（`$1`）传入，不拼进命令字符串；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
 | K15 | P2 | 已并入 §5（2026-11-21） | Linux / 龙芯安装与 dpkg 流程缺少自动化与真机验证记录 | 不单独做，由 §5 验证矩阵的 Linux 行覆盖（含 dpkg 安装步骤与记录模板） | 见 §5 |
+| K17 | P1 | 已完成（2026-11-21） | `os` 的 `linuxArch` / `linuxCore` / `lsbRelease` 注释写返回 string，实际返回带末尾换行的 Buffer，`env.getSystemDesc()` 拼出的描述每段夹着换行；注释示例 `Ubuntu 20.04` 也不对（`lsb_release -i -s` 只有发行版名） | 统一经 `execSync(cmd, { encoding: 'utf8' }).trim()`，失败记日志返回空串；改正 `env` 注释 | 单测（K9 中发现） |
+| K18 | P1 | 已完成（2026-11-21） | `singleInstance` 抢锁失败只调用异步的 `app.quit()`、无返回值，调用方后面的代码在退出前继续执行（问卷：第二实例抢走截屏热键、启动服务发现） | 返回是否拿到锁（boolean），README 写明用法；业务侧改用见 P11 | 单测（K9 中发现） |
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 
 ## 3. frame 条目
@@ -77,6 +79,7 @@
 | P8 | 已完成（2026-11-20） | 两个项目改用 `libs/pkg` 与新包信息：启动页始终用随客户端下发的包（宿主版本）打开、显示宿主版本；删除「上次启动版本」记录与据此重启的逻辑；整合客户端 `update` 改为 `getPkg` / `downloadPkg` / `launch`（修复进不了首页），进入失败与下载的包不符时显示 `loadingError`；问卷保留「本地最新的包、失败回落内置包」规则 | K16 / F9 |
 | P9 | 待确认 | 问卷 `capability/resource` 两处 `Promise.race` 超时绕行删除（下载已有停顿超时与可中止的取消） | K10 |
 | P10 | 待确认 | 问卷资源下载编排改用 `libs/download` 的 `startBatch`，删除自写的并发、跳过与校验 | K11 |
+| P11 | 待确认 | 两个项目 `checkSingleInstance()` 改为 `if (!checkSingleInstance()) return;` 一类的提前返回（主进程入口顶层能否 return、改用包一层函数还是条件包裹待定），删除问卷 `src/main/index.js` 中关于失效窗口的注释 | K18 |
 
 ## 5. 全平台全架构验证矩阵
 
@@ -117,6 +120,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 ### 8.0 2026-11-21 完成
 
+- G9 的 P0 完成：K7（toolkit `a01a10c`）、F4（问题不成立，frame `a3455e7` 补回归单测）、K9 及其中发现的 K17、K18（toolkit 本次提交）。
 - 复查问题 7（清单修正）已确认并改入各表：P1、F10 已完成，K15 并入 §5，§7 第 3 项关闭；新增 F11、P9、P10（待确认）；
   K6、K8、F2 方案按实际落地改写，K10、K11、F9 补记复查补全，K14 补充 `sh -c` + `$1` 传参。
 - `known-limitations.md` 删除已修的 12 条，保留 K7、K9、K13、K14。
@@ -140,8 +144,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 ### 8.3 下一步（建议顺序）
 
-1. G9 中的 P0：K7、F4、K9（均为待确认，逐条确认后做）；
-2. 业务侧清理：P3、P9、P10、8.2 的问卷测试；
-3. 定 §5 矩阵范围与 F8 后做 G8 Linux 组（K13、K14、F8、F11），开始按矩阵验证；
-4. F6、F7 定范围后再排；
-5. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
+1. 业务侧清理：P3、P9、P10、P11、8.2 的问卷测试（逐条确认后做）；
+2. 定 §5 矩阵范围与 F8 后做 G8 Linux 组（K13、K14、F8、F11），开始按矩阵验证；
+3. F6、F7 定范围后再排；
+4. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。

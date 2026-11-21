@@ -49,7 +49,7 @@ npm test
 | `/main/capability/*` | main | 单个 capability（`example`/`update`/`download`/`archive`/`store`/`env`/`logger`） |
 | `/main/enhance/*` | main | 窗口增强（如 `BaseWindow`） |
 | `/main/libs/*` | main | 主进程通用库（见下表） |
-| `/main/paths` | main | 受控路径配置（`getFilePathConfig`/`setPathConfig`） |
+| `/main/paths` | main | 受控路径配置（`getFilePathConfig`/`setPathConfig`）。**`setPathConfig` 须在任何 capability 以及 `libs/logger`、`libs/store` 被 require 之前调用**：它们加载时即读取路径并建目录，晚调用不生效且不报错 |
 | `/service`、`/service/preload` | main / preload | Service 主端与 preload 桥 |
 | `/notice`、`/notice/preload` | main / preload | Notice 主端与 preload 桥 |
 | `/preload` | preload | preload 聚合入口（装配 `appService`/`appNotice`） |
@@ -77,7 +77,9 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `scope` | 目录 | 受控 scope 规则：`/` 字符串或段数组规范化、逃逸拒绝、纯 fileName 校验 |
 | `logger` | 文件 | log4js 封装，六级方法 + `print` + `shutdown`。顶层即 `configure`、无 init；轮转默认 500K × 10，要改参数须在 require 它之前调 `main/libs/loggerConfig` 的 `setLoggerConfig`。**契约：六级方法与 `shutdown` 永不抛**，失败走 `console.error` 次级通道自报并丢弃该条 —— 写日志不得影响主流程，调用方（尤其经 Service 跨进程的渲染层）可放心 fire-and-forget。要覆盖日志目录须在 require 本模块**之前**调 `setPathConfig({ log })` |
 | `store` | 文件 | **持久存储，两类分开用**（详见下方小节） |
-| `os`、`shortcut`、`singleInstance` | 文件 | 系统信息、全局热键、单实例 |
+| `os` | 文件 | 平台判断与 Linux 系统信息（见下方「系统信息（os）」） |
+| `shortcut` | 文件 | 全局热键（见下方「热键配置（shortcut）」） |
+| `singleInstance` | 文件 | 单实例锁，返回是否拿到锁（见下方「单实例（singleInstance）」） |
 | `protocol` | 文件 | 自定义协议：宿主 `declareSchemes`（ready 前一次），包 `serveResource` / `serveIframeResource`（返回撤销函数） |
 | `resourceRoot` | 文件 | 资源根目录：宿主本地调试为 `<项目根目录>/resources`，打包运行为 `process.resourcesPath`；依据宿主运行时 `isHostDev` |
 | `pkg` | 目录 | 应用包的通用操作：`get`（按来源取包）、`download`、`removeOtherVersions`、`parseDevSources`；包信息格式、来源规则、`BC_DEV_PKG_SOURCES` 见 `docs/design/pkg-source.md`；来源常量 `PKG_SOURCE` 由 `shared` 导出 |
@@ -242,3 +244,35 @@ shortcut();
 // 兼容业务历史习惯，指定 F5
 shortcut({ devToolsKey: 'Command+Control+Alt+F5' });
 ```
+
+## 系统信息（os）
+
+```js
+const os = require('@base-client/toolkit/main/libs/os');
+
+os.isWindows();   // boolean
+os.isLinux();     // boolean
+os.isMacOS();     // boolean
+os.isLoongnix();  // boolean：Linux 且发行版名含 Loongnix
+
+// 以下只在 Linux 下有值，其余平台返回 ''；命令执行失败记 error 日志并返回 ''
+os.linuxArch();   // 'x86_64'（uname -m）
+os.linuxCore();   // '5.10.0-8-amd64'（uname -r）
+os.lsbRelease();  // 'Ubuntu'（lsb_release -i -s，只有发行版名，不含版本号）
+```
+
+- `isLoongnix()`、`lsbRelease()` 每次调用都会**同步执行** `lsb_release`；需要反复判断时自行缓存结果。
+- 没有安装 `lsb_release` 的发行版上，这两个函数每次都会记一条 error 日志，并分别返回 `false` / `''`。
+
+## 单实例（singleInstance）
+
+```js
+const checkSingleInstance = require('@base-client/toolkit/main/libs/singleInstance');
+
+// 在 app ready 之前、注册全局热键和启动服务之前调用
+if (!checkSingleInstance()) return;
+```
+
+- 抢锁失败时调用 `app.quit()` 并返回 `false`。`app.quit()` 是异步的，不提前返回的话，后面的代码在进程退出前仍会执行
+  （例如第二个实例抢走第一个实例的全局热键）。
+- 拿到锁时返回 `true`；之后再启动的实例会让当前实例还原并聚焦所有窗口。

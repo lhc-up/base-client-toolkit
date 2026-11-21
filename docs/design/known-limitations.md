@@ -6,24 +6,6 @@
 
 ## 已知限制
 
-- **可单独引用的 `libs` 模块缺少用法文档，且无法从聚合入口发现**：三件事叠加——
-  ① README 的「主进程 libs」表把 `logger` / `os` / `shortcut` / `singleInstance` / `store`
-  五个文件类模块挤在一行、说明合计约十个字，其中 **`logger` / `os` / `singleInstance` /
-  `store` 四个没有任何用法示例**（而 `download` / `archive` / `update` / `shortcut`
-  各有带代码的专门章节）；② `/main` 聚合入口只导出 `capability` / `BaseWindow` / `paths`、
-  **不含 libs**（源码注释表明「无根聚合入口」是刻意的包边界），所以 libs 只能靠记深路径；
-  ③ 没有类型声明，IDE 不补全，子路径拼错只在运行时暴露。
-  - **另有一处时序陷阱未进 README**：`setPathConfig()` 必须在任何 capability 以及
-    `libs/logger`、`libs/store` 被 `require` **之前**调用（它们顶层即取值并 `ensureDirSync`），
-    晚于它们则无效**且不报错**。该约束目前只写在 `paths.js:9` 与 `logger.js:4` 的源码注释里，
-    踩中的代价是日志/缓存已落到默认目录且改不动。
-  - 建议：① 给那四个模块各补最小用法（`logger` 至少需要：六级方法 + `print` + `shutdown`、
-    落点与轮转策略、`log4js` 这个 optional peer 的安装要求）；② 在 README 的 `/main/paths`
-    一行补上述时序约束；③ **可选**——给 `/main` 增加 `libs` 的**懒加载** getter 以便发现式使用
-    （必须懒加载：`logger` 顶层会 `log4js.configure`、`paths` 顶层会 `ensureDirSync`，
-    饿加载会破坏「严格按需引入」）；若认为「无根聚合入口」是不可让的包边界，则只做 ①②。
-  - 提出方：`questionnaire-answer-v3.0` 迁移项目（2026-10-07）。
-
 - **Linux 的 `dpkg -i` 没有 `--force-overwrite`，文件冲突时安装直接失败，且失败几乎不可排查**：
   `capability/update` 的两处 dpkg 调用都是裸 `dpkg -i <path>` ——
   `installByDpkg`（`createUpdateCapability.js:158`，sudo-prompt 分支）与

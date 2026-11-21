@@ -40,7 +40,7 @@ async function getMac() {
 /**
  * 取系统架构描述。只在 Linux 下有值，其余平台返回空串。
  *
- * @returns {Promise<string>} Linux 下形如 `x86_64,5.10.0,Ubuntu 20.04`；其余平台为 `''`
+ * @returns {Promise<string>} Linux 下为「架构,内核版本,发行版名」，形如 `x86_64,5.10.0-8-amd64,Ubuntu`；其余平台为 `''`
  */
 async function getSystemDesc() {
     try {
