@@ -57,7 +57,7 @@
 | F4 | P0 | 已完成（2026-11-21，问题不成立） | 怀疑通用替换未覆盖 `typeof process.env.BC_xxx` | 实测已覆盖：webpack 的 typeof 钩子未处理时会把参数当成员链交给插件，未声明的变为 `typeof undefined` 并警告；补回归单测，README 写明（frame `a3455e7`） | frame 单测 |
 | F5 | P1 | 已完成（2026-11-19） | 生产项目需要自行拼 preload / 产物路径 | frame 导出路径常量（如 `@base-client/frame/paths`），与 K12 配对 | 两个项目改用后编译与运行通过 |
 | F6 | P1 | 已完成（2026-11-21，frame `ae241e3`，问卷 `2005fe91`，整合 `fd31340`） | frame 预设太薄，两个项目各写一大段相同的 webpack 配置且已走样（文件名 hash、css 目录与 publicPath、图片类型不一致）；main 漏配 `toolkitExternals` 不报错，包里会打进独立的 toolkit | main 预设自动接入 `toolkitExternals`；renderer / web 合并后补图片字体规则、CSS 抽离到 `css/`、CSS 压缩、生产环境 contenthash 文件名，项目写了就以项目为准；导出 `styleLoader(ctx)`；问卷 web 端保留自己的规则（产物放在上下文目录下） | 单测；改前改后产物对比：问卷 web 端除构建时间外一致，main / preload 除构建时间外一致，renderer 文件一一对应、css 与 html 的引用全部可解析；两个项目启动页实际显示正常（测试后台不通，未进入登录页 / 首页） |
-| F7 | P1 | 待确认 | 与历史 base-client.bake 的行为差异未系统盘点 | 逐项梳理成文档，能对齐的对齐 | 文档 |
+| F7 | P1 | 跳过（2026-11-21 用户要求先跳过，盘点方案已整理：运行时与构建分两块对照 bake，结论分已对齐 / 有意不同 / 需对齐） | 与历史 base-client.bake 的行为差异未系统盘点 | 逐项梳理成文档，能对齐的对齐 | 文档 |
 | F8 | P2 | 已完成（2026-11-21，frame `5a92f52`，问卷 `c10e0c6e`，整合 `ce930ab`） | 龙芯 Electron 镜像配置在两个项目各抄一份；官方 electron-builder 打 loong64 时不报错、悄悄打出标成 amd64 的包；打包步骤只写在 `.npmrc` 注释里且已过时 | frame 在 `--arch loong64` 时把龙芯镜像合并进打包预设（项目可覆盖）；`pack` / `installer` 打包前检查 builder-util 是否支持 loong64，不支持就停止并在控制台输出完整处理步骤；规则写在 frame `docs/build-target-resolution-contract.md`；删除两个项目的龙芯配置与 `.npmrc` | 单测；本机验证：官方版 builder 2.6 秒内停止且不清 dist，龙芯版 builder 识别为支持；合并后的配置与原项目配置一致。龙芯真机打包待 §5 |
 | F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件。复查补全：与 toolkit 约定的目录名、描述文件名集中定义，README 列出，两边单测断言（frame `8ff35c4`、toolkit `df19dc2`） | 单测；两个项目打包与本地调试实测 |
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
@@ -159,6 +159,6 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 1. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
 2. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
-3. F7 定范围后再排；
+3. F7（bake 差异盘点）：用户要求先跳过；
 4. F12（Linux x64 安装包文件名改 x64）：用户要求放在最后处理，届时再按「现状 / 如何修改 / 效果」确认（影响点已排查，见 F12 行）；
 5. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
