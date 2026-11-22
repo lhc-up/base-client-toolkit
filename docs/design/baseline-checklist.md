@@ -66,6 +66,7 @@
 | F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
+| F15 | P1 | 待确认（2026-11-22 新发现，F7 子清单之后逐项确认） | frame 对 electron-builder 的预设很薄（只有产物布局、名称、安装脚本与图标回填、龙芯镜像），两个项目各写近乎全量的配置且约九成相同：`asar`、`mac.identity`、`dmg.title`、`win` 四个字段、签名配置、`linux` 五个字段、`nsis` 十个字段中九个、`artifactName` 的环境标识映射；问卷还手写了 frame 本会补的 `deb.fpm` / `nsis.include` | 方向同 F6：通用部分收进 frame 打包预设（项目写了以项目为准），业务只留发布后不能改的值（`appId`、`nsis.guid`、`deb.packageName`）与真正的业务取值（如 `nsis.runAfterFinish`）；逐项确认 | 待定 |
 
 ### 3.1 F7 子清单：bake 功能对照发现的问题
 
@@ -85,7 +86,7 @@
 | F7-S2 | frame | 搁置（2026-11-22，随 F7-S1） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
 | F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
 | F7-S4 | toolkit | 已完成（2026-11-22，toolkit `64d401e`） | 页面加载失败（`did-fail-load`）不通知渲染层；复查发现真正的问题是加载失败时日志里什么都没有：`BaseWindow` 不接 `loadURL` 的 reject、没人监听 `did-fail-load`，Electron 22 实测窗口照样 ready-to-show 但白屏，失败只打到 stderr、不触发 unhandledRejection（F7-R1 也接不到）；渲染进程崩溃同样无记录 | 用户决定：不通知页面（失败的正是该页面，bake 页面也没有监听方）；toolkit `BaseWindow.create()` 监听主页面 `did-fail-load`（忽略子 frame 与 -3 ERR_ABORTED）与 `render-process-gone` 写 ERROR 日志，`loadURL` 加 catch；两个项目不用改。实测：Electron 22 加载缺失文件与强制崩溃渲染进程，日志文件各记一条；问卷 `dev:app` 正常启动无误报 |
-| F7-S5 | 接入层 | 存疑 | `no-sandbox`：bake 设置，两个项目都没有（deb 安装脚本会给 chrome-sandbox 设 SUID） | 需 Linux / 龙芯真机验证（§5） |
+| F7-S5 | 接入层 | 不改（2026-11-22 用户决定），文档已补（frame `655ddc5`、问卷 `ee674197`、整合 `0d4909f`） | `no-sandbox`：bake 在主进程 `appendSwitch`，两个项目只在 builder 配置写 `linux.executableArgs`（问卷迁移时删掉了原有的 `appendSwitch`） | 查明：`executableArgs` 只写进 `.desktop` 的 `Exec=`（electron-builder 24.13.3 `LinuxTargetHelper.js`），桌面图标 / 应用菜单启动带参数，终端 `/usr/bin/<name>` 不带；root 检查早于主进程 JS，`appendSwitch` 很可能来不及生效（按 Chromium 启动顺序判断，未实测）。用户决定不支持终端以 root 启动：frame README 新增「Linux 启动与沙箱」，两个项目 `executableArgs` 注释写明原因与生效范围；不收进 frame（留在项目配置中直观可见）。真机验证见 §5 Linux 补充项 |
 | F7-S6 | 接入层 | 存疑 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 | 没找到问卷有意不做的说明 |
 | F7-S7 | frame | 存疑 | 第三方库不单独拆 vendor 文件（bake 有） | 客户端影响很小 |
 | F7-S8 | frame | 存疑 | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | bake 待办未完成 |
@@ -130,6 +131,14 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 「不验证」的组合仍属基线支持范围：代码不得写死平台 / 架构，但本期不做实测。
 
+Linux 测试清单补充项（未实测，各 Linux 行都跑）：
+
+| 来源 | 操作 | 预期 |
+|---|---|---|
+| F7-S5 | 普通用户点桌面图标启动 | 正常打开 |
+| F7-S5 | root 点桌面图标启动 | 正常打开 |
+| F7-S5 | root 在终端执行 `<name>`；再执行 `<name> --no-sandbox` | 前者启动失败并报 `Running as root without --no-sandbox is not supported`；后者正常打开 |
+
 ## 6. 来源文档与维护规则
 
 | 文档 | 角色 |
@@ -166,7 +175,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
 - F7-B2、F7-B3 不改（用户决定）。
 - F7-B4 完成：frame 自带循环依赖检测，默认警告。
-- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。下一条 F7-S5。
+- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。F7-S5 不改、补文档。新编 F15（electron-builder 预设）。下一条 F7-S6。
 
 ### 8.1 2026-11-21 完成
 
@@ -207,7 +216,6 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S5 | 接入层 | `no-sandbox`：bake 设置，两个项目都没有，需 Linux / 龙芯真机验证 |
 | F7-S6 | 接入层 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 |
 | F7-S7 | frame | 第三方库不单独拆 vendor 文件，客户端影响很小 |
 | F7-S8 | frame | `package.json` 的 name 支持什么格式没有结论，frame 不校验 |
@@ -222,6 +230,12 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 |---|---|
 | K13 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 |
 | K14 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`；`!err && !stderr` 把成功时的 stderr 警告判为失败 |
+
+**二之一、新发现待确认（§3）**
+
+| # | 问题（简） |
+|---|---|
+| F15 | electron-builder 预设很薄，两个项目各写近乎全量配置且约九成相同（F7 子清单之后逐项确认） |
 
 **三、暂缓 / 只记录不做**
 
