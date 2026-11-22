@@ -62,14 +62,10 @@
 | F8 | P2 | 已完成（2026-11-21，frame `5a92f52`，问卷 `c10e0c6e`，整合 `ce930ab`） | 龙芯 Electron 镜像配置在两个项目各抄一份；官方 electron-builder 打 loong64 时不报错、悄悄打出标成 amd64 的包；打包步骤只写在 `.npmrc` 注释里且已过时 | frame 在 `--arch loong64` 时把龙芯镜像合并进打包预设（项目可覆盖）；`pack` / `installer` 打包前检查 builder-util 是否支持 loong64，不支持就停止并在控制台输出完整处理步骤；规则写在 frame `docs/build-target-resolution-contract.md`；删除两个项目的龙芯配置与 `.npmrc` | 单测；本机验证：官方版 builder 2.6 秒内停止且不清 dist，龙芯版 builder 识别为支持；合并后的配置与原项目配置一致。龙芯真机打包待 §5 |
 | F9 | P0 | 已完成（2026-11-20） | 布局收敛不彻底（打包、过滤、复制、加密、项目代码中仍有写死的目录名）；启动页由业务各自配置；描述文件的 `renderer` 是目录、页面名靠调用方写死；devServer 来源靠手配 `main` + `url` | `paths.js` 单一布局表，构建期 `createLayout`、运行期 `resolveLayout` 同源（替代 `resolvePreload`）；启动页规范（`src/renderer/update/`，frame 自动加入）；描述文件写 `main` / `renderer` / `update` 三个入口文件；`dev:app` 在 dev server 根地址提供同格式描述文件。复查补全：与 toolkit 约定的目录名、描述文件名集中定义，README 列出，两边单测断言（frame `8ff35c4`、toolkit `df19dc2`） | 单测；两个项目打包与本地调试实测 |
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
-| F11 | P2 | 已完成（2026-11-21，frame `b252bbb`） | frame 无 `.gitattributes`，Windows（`core.autocrlf=true`）检出后 `bin/base-client.js` 首行为 `node
-`，从这份工作区发布或 yalc 推包后 Linux / mac 报 `/usr/bin/env: 'node
-'` 无法执行（本机全新克隆 + `npm pack` 实测复现）。shell 模板生成时已转 LF，不受影响；toolkit 无可执行脚本 | 新增 `.gitattributes`（`bin/**`、`*.sh` 固定 LF）；单测断言 bin 首行不含回车；frame 补 `prepublishOnly: npm test`（原来没有） | 修复后全新克隆与 `npm pack` 产物首行均为 LF；CRLF 时单测失败 |
+| F11 | P2 | 已完成（2026-11-21，frame `b252bbb`） | frame 无 `.gitattributes`，Windows（`core.autocrlf=true`）检出后 `bin/base-client.js` 首行为 `node\r`，从这份工作区发布或 yalc 推包后 Linux / mac 报 `/usr/bin/env: 'node\r'` 无法执行（本机全新克隆 + `npm pack` 实测复现）。shell 模板生成时已转 LF，不受影响；toolkit 无可执行脚本 | 新增 `.gitattributes`（`bin/**`、`*.sh` 固定 LF）；单测断言 bin 首行不含回车；frame 补 `prepublishOnly: npm test`（原来没有） | 修复后全新克隆与 `npm pack` 产物首行均为 LF；CRLF 时单测失败 |
 | F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
-`，Linux / mac 上 `#!/usr/bin/env node
-` 无法执行 | 加 `.gitattributes` 固定 `bin` 等脚本为 LF（toolkit 一并加）；发布前检查 | Linux / mac 上执行 `base-client` |
 
 ### 3.1 F7 子清单：bake 功能对照发现的问题
 
@@ -126,9 +122,9 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 | Windows | x64 | ✓ | ✓ | 本机 | 待验证 |
 | Windows | ia32 | ✓ | ✓ | 本机（64 位 Windows 运行 32 位包） | 待验证 |
 | Windows | arm64 | ✓ | — | 无 | 不验证（业务未使用） |
-| Linux | x64 | ✓ | ✓ | 需另备机器（本机受限装不上 WSL） | 待验证 |
-| Linux | arm64 | ✓ | ✓ | 需另备机器 | 待验证 |
-| Linux | loong64 | ✓ | ✓ | 需另备龙芯机器 | 待验证 |
+| Linux | x64 | ✓ | ✓ | 用户在测试机上手动测试（按测试清单） | 待验证 |
+| Linux | arm64 | ✓ | ✓ | 用户在测试机上手动测试（按测试清单） | 待验证 |
+| Linux | loong64 | ✓ | ✓ | 用户在测试机上手动测试（按测试清单） | 待验证 |
 | macOS | x64 | ✓ | — | 无 | 不验证（业务未使用） |
 | macOS | arm64 | ✓ | — | 无 | 不验证（业务未使用） |
 
@@ -155,11 +151,19 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 2. ~~F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置~~：frame 内置并加检查（2026-11-21）。
 3. ~~问卷 `docs/base-client/已知问题.md` 的既有更新提交（`39fcdf98`）保留还是撤销~~：已关闭，保留（2026-11-21）。
 
-## 8. 进度记录（最近一次：2026-11-21）
+## 8. 进度记录（最近一次：2026-11-22）
 
 > 只记录「做到哪了、下一步做什么」，条目状态以上面各表为准。下次开始时先读本节。
 
-### 8.0 2026-11-21 完成
+### 8.0 2026-11-22
+
+- 测试后台仍不通，F6、P9 继续待验证。
+- 确定 Linux / 龙芯的验证方式：代码在本机写，各平台分支用单测覆盖，关键步骤写日志；
+  真机由用户在测试机上按测试清单手动测试，日志交回分析。未实测的部分在清单中标「未实测」。
+- F7-R3 复查新发现：打不开时间设置时两个页面都可能不提示（问卷非 Windows 无反应；整合 Windows 打开失败无提示）。
+- 修正清单格式：F11 行内的换行、F14 后的残行。
+
+### 8.1 2026-11-21 完成
 
 - 后半段：F6、F8、F11 完成；F12、K19 决定不改；F14 并入 F13；F7 盘点完成，发现的问题记入 §3.1 子清单（F7-R1 完成，F7-R2 暂缓）。四个仓库均只在本地提交、未推送，toolkit / frame 在 `master` 且未配置远程。
 - 业务侧清理完成：P3、P9、P10、P11、P12，Windows 打包实测通过（问卷、整合客户端，本地 Node 模拟后台）。
@@ -168,7 +172,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
   K6、K8、F2 方案按实际落地改写，K10、K11、F9 补记复查补全，K14 补充 `sh -c` + `$1` 传参。
 - `known-limitations.md` 删除已修的 12 条，保留 K7、K9、K13、K14。
 
-### 8.1 2026-11-20 完成
+### 8.2 2026-11-20 完成
 
 对 2026-11-19 的清单与修复做了复查，发现的问题逐个确认后修复（各仓库均已提交、未推送）：
 
@@ -181,20 +185,20 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 | 5. 构建 Node 版本无运行时检查；主进程代码 Node 16.17 兼容性无保障 | 命令入口检查 `engines`；两个项目加 `.nvmrc`；整合客户端与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
 | 6. 布局收敛剩余：`resources` / `packages` / `package.json` 两边各写一份 | 作为两个包之间的约定集中定义，README 列出，两边单测断言 | frame `8ff35c4`，toolkit `df19dc2` |
 
-### 8.2 新发现、尚未编号
+### 8.3 新发现、尚未编号
 
 （无。原记录的问卷 `npm test` 失败已编号 P12 并修复。）
 
-### 8.2.1 已改但未完全验证（稍后验证）
+### 8.3.1 已改但未完全验证（稍后验证）
 
 - F6：两个项目只验证到启动页（测试后台当时不通），登录页 / 首页的样式与图片未在运行中检查；整合客户端产物文件名已带 contenthash、css 统一在 `css/` 下。
 - P9：作答页的资源下载需真实后台登录，打包实测只走到登录页资源包路径，作答页那段只有单测。
 
-### 8.3 下一步（建议顺序）
+### 8.4 下一步（建议顺序）
 
-1. 稍后验证：8.2.1 的 F6、P9（需测试后台可访问）；
-2. K13、K14（Linux 安装）：方案已整理，需要在 Linux 测试机上验证，用户要求等测试机齐备后再做；F13（解除对龙芯源的依赖）先记录不做；
-3. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：用户要求等所有测试机准备好后统一做；
+1. 稍后验证：8.3.1 的 F6、P9（需测试后台可访问）；
+2. K13、K14（Linux 安装）：方案已整理，本机写代码和单测，交付时附测试清单，由用户在测试机上手动测试；F13（解除对龙芯源的依赖）先记录不做；
+3. §5 矩阵验证（Windows x64 / ia32、Linux x64 / arm64 / loong64）：Windows 在本机验证；Linux / 龙芯本机写代码和单测，交付时附测试清单，由用户在测试机上手动测试；
 4. F7 子清单（§3.1）：F7-R1 已完成，F7-R2 暂缓（讨论结论已记录），其余逐条确认；
 5. ~~F12（Linux x64 安装包文件名改 x64）~~：不改，文件名与包内 Architecture 保持一致；
 6. 收尾（不提前做）：推送；以本分支重置 develop；toolkit / frame 正式发布；之后后台改造。
