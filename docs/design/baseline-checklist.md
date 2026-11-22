@@ -84,7 +84,7 @@
 | F7-S1 | frame / toolkit | 已完成（2026-11-22，frame `2af0b11`） | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有）；复查还发现 `app/preload/` 也会被加密（Electron 直接读，拦截协议也解不了），且默认就开启（不写 `encrypt` 时 `pack` 要求 key） | 用户决定：暂不支持加密。不写 `encrypt` 或写 `false` 为不加密，写了其他值打包前直接报错（不清 dist）；加密实现保留（`parseEncryptConfig` / `encryptRenderer` 与单测），文档写明暂不支持；两个项目的 `encrypt: false` 保留不动。问卷实测：写 encrypt 报错且 dist 保留、不写 encrypt 正常打包（描述文件 `encrypted: false`）、原配置正常 |
 | F7-S2 | frame | 搁置（2026-11-22，随 F7-S1） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
 | F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
-| F7-S4 | 接入层 | 存疑 | 页面加载失败（`did-fail-load`）不通知渲染层 | bake 渲染层也没有监听方 |
+| F7-S4 | toolkit | 已完成（2026-11-22，toolkit `64d401e`） | 页面加载失败（`did-fail-load`）不通知渲染层；复查发现真正的问题是加载失败时日志里什么都没有：`BaseWindow` 不接 `loadURL` 的 reject、没人监听 `did-fail-load`，Electron 22 实测窗口照样 ready-to-show 但白屏，失败只打到 stderr、不触发 unhandledRejection（F7-R1 也接不到）；渲染进程崩溃同样无记录 | 用户决定：不通知页面（失败的正是该页面，bake 页面也没有监听方）；toolkit `BaseWindow.create()` 监听主页面 `did-fail-load`（忽略子 frame 与 -3 ERR_ABORTED）与 `render-process-gone` 写 ERROR 日志，`loadURL` 加 catch；两个项目不用改。实测：Electron 22 加载缺失文件与强制崩溃渲染进程，日志文件各记一条；问卷 `dev:app` 正常启动无误报 |
 | F7-S5 | 接入层 | 存疑 | `no-sandbox`：bake 设置，两个项目都没有（deb 安装脚本会给 chrome-sandbox 设 SUID） | 需 Linux / 龙芯真机验证（§5） |
 | F7-S6 | 接入层 | 存疑 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 | 没找到问卷有意不做的说明 |
 | F7-S7 | frame | 存疑 | 第三方库不单独拆 vendor 文件（bake 有） | 客户端影响很小 |
@@ -166,7 +166,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
 - F7-B2、F7-B3 不改（用户决定）。
 - F7-B4 完成：frame 自带循环依赖检测，默认警告。
-- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。下一条 F7-S4。
+- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。下一条 F7-S5。
 
 ### 8.1 2026-11-21 完成
 
@@ -207,7 +207,6 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S4 | 接入层 | 页面加载失败（`did-fail-load`）不通知渲染层，bake 渲染层也没有监听方 |
 | F7-S5 | 接入层 | `no-sandbox`：bake 设置，两个项目都没有，需 Linux / 龙芯真机验证 |
 | F7-S6 | 接入层 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 |
 | F7-S7 | frame | 第三方库不单独拆 vendor 文件，客户端影响很小 |
