@@ -81,8 +81,8 @@
 | F7-B2 | frame | 不改（2026-11-22 用户决定） | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 用户不要关闭后询问重启的交互；保持关闭 Electron 即停止 dev server 并退出 |
 | F7-B3 | frame | 不改（2026-11-22 用户决定） | 生产构建不删除 console 输出（bake 有 `drop_console`） | 保持 terser 默认。依据：两个项目 main / preload 无 console 调用，toolkit 不打进 bundle；renderer 的 console 体积可忽略；客户端日志经主进程 logger 落盘，不依赖 console；问卷 web 端 logger 的 warn / error 就是 console，全删会看不到 web 端错误 |
 | F7-B4 | frame | 已完成（2026-11-22，frame `583ee2b`） | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 用户决定：frame 自带检测（不引入 `circular-dependency-plugin`），main / preload / renderer / web 都加；只查项目代码（排除 `node_modules`），`import`、`require` 及混用都算，`import()` 不算，CommonJS 指向自身的连接不算；强连通分量一次找出，每组报一条最短路径（注明组内文件数）；默认警告并打印路径，`bc.config` `circularDependency: 'error'` 构建失败、`false` 关闭。实测：两个项目当前 0 个循环（改前用临时脚本、改后用插件各测一次）；问卷临时加 a ↔ b 循环，警告与报错两种模式输出符合预期 |
-| F7-S1 | frame / toolkit | 存疑 | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有） | 两个项目都 `encrypt: false`，目前无影响；开启加密后页面会加载不出来 |
-| F7-S2 | frame | 存疑 | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 没找到收窄的说明 |
+| F7-S1 | frame / toolkit | 已完成（2026-11-22，frame `2af0b11`） | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有）；复查还发现 `app/preload/` 也会被加密（Electron 直接读，拦截协议也解不了），且默认就开启（不写 `encrypt` 时 `pack` 要求 key） | 用户决定：暂不支持加密。不写 `encrypt` 或写 `false` 为不加密，写了其他值打包前直接报错（不清 dist）；加密实现保留（`parseEncryptConfig` / `encryptRenderer` 与单测），文档写明暂不支持；两个项目的 `encrypt: false` 保留不动。问卷实测：写 encrypt 报错且 dist 保留、不写 encrypt 正常打包（描述文件 `encrypted: false`）、原配置正常 |
+| F7-S2 | frame | 搁置（2026-11-22，随 F7-S1） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
 | F7-S3 | toolkit / 接入层 | 存疑 | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 两个项目都没有调用方 |
 | F7-S4 | 接入层 | 存疑 | 页面加载失败（`did-fail-load`）不通知渲染层 | bake 渲染层也没有监听方 |
 | F7-S5 | 接入层 | 存疑 | `no-sandbox`：bake 设置，两个项目都没有（deb 安装脚本会给 chrome-sandbox 设 SUID） | 需 Linux / 龙芯真机验证（§5） |
@@ -165,7 +165,8 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - F7-R3 完成：toolkit `openDateTimeSettings()`（仅 Windows），两个宿主改用，页面不支持 / 打开失败时弹窗提示；两个项目 Windows 打包实测（模拟后台返回偏差 3 天的服务器时间）通过。
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
 - F7-B2、F7-B3 不改（用户决定）。
-- F7-B4 完成：frame 自带循环依赖检测，默认警告。下一条 F7-S1。
+- F7-B4 完成：frame 自带循环依赖检测，默认警告。
+- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。下一条 F7-S3。
 
 ### 8.1 2026-11-21 完成
 
@@ -202,12 +203,10 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 > 只列还没做完的项，详细内容与状态以上面各表为准；做完一项就从这里删掉。处理顺序待用户确定。
 
-**一、F7 子清单未确认（§3.1，逐条确认后再改）**
+**一、F7 子清单未确认（§3.1，逐条确认后再改；用户 2026-11-22 定：先逐条确认、修复子清单）**
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S1 | frame / toolkit | 产物加密只有构建期，没有运行时解密；两个项目都没开加密，开了页面会加载不出来 |
-| F7-S2 | frame | 加密范围变窄：bake 加密 renderer / update 全部文件，frame 只加密 `.js` |
 | F7-S3 | toolkit / 接入层 | 键盘锁定原生插件 `block-keyboard` 没有了，两个项目也没有调用方 |
 | F7-S4 | 接入层 | 页面加载失败（`did-fail-load`）不通知渲染层，bake 渲染层也没有监听方 |
 | F7-S5 | 接入层 | `no-sandbox`：bake 设置，两个项目都没有，需 Linux / 龙芯真机验证 |
@@ -232,6 +231,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 |---|---|---|
 | F7-R2 | 整合客户端退出时多数路径直接 `app.exit`，最后一段日志可能丢失 | 用户决定暂缓，讨论结论见 §3.1 |
 | F13 | 龙芯打包依赖龙芯 npm 源与 Electron 镜像，源一挂就无法打包 | 先记录不做 |
+| F7-S2 | 加密范围（bake 全部文件 / frame 只加密 `.js`） | 随 F7-S1 搁置，恢复加密时一起设计 |
 
 **四、等条件满足的验证与收尾**
 
