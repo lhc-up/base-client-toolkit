@@ -260,6 +260,18 @@ os.lsbRelease();  // 'Ubuntu'（lsb_release -i -s，只有发行版名，不含�
 - `isLoongnix()`、`lsbRelease()` 每次调用都会**同步执行** `lsb_release`；需要反复判断时自行缓存结果。
 - 没有安装 `lsb_release` 的发行版上，这两个函数每次都会记一条 error 日志，并分别返回 `false` / `''`。
 
+打开系统的「日期和时间」设置（异步，不会抛异常）：
+
+```js
+const result = await os.openDateTimeSettings();
+// { opened: true }
+// { opened: false, reason: 'unsupported-platform' }  当前平台不支持（目前只支持 Windows）
+// { opened: false, reason: 'open-failed' }           启动设置程序失败，原因见 error 日志
+```
+
+- 设置程序启动成功即返回，不等用户关闭设置窗口。
+- `opened` 为 `false` 时由页面提示用户手动修改系统时间。
+
 ## 单实例（singleInstance）
 
 ```js

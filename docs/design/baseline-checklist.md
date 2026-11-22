@@ -76,7 +76,7 @@
 |---|---|---|---|---|
 | F7-R1 | 接入层（两个宿主） | 已完成（2026-11-21，问卷 `d515b706`，整合 `9d4b56b`） | 主进程未捕获的异常与 Promise 拒绝不写日志 | 用户决定不放 toolkit（全局监听会改变进程行为，属宿主决策）；两个宿主入口各自监听并记日志，不测默认行为 |
 | F7-R2 | 接入层（整合） | 暂缓（用户决定先不修） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
-| F7-R3 | 接入层（两个宿主） | 待确认 | 「打开系统时间设置」只支持 Windows，macOS / Linux 直接返回 `unsupported-platform`（bake 有 macOS 系统偏好、Linux gnome / dde / KDE 三种） | Linux / 龙芯上时间不对时，启动页「修改时间」只能提示手动修改 |
+| F7-R3 | toolkit / 接入层（两个宿主） | 已完成（2026-11-22，toolkit / 问卷 / 整合见 §8.0） | 「打开系统时间设置」只支持 Windows；复查发现打不开时两个页面都可能不提示（问卷非 Windows 点击无反应，整合 Windows 打开失败无提示）；两个宿主各写一份 | 用户决定：收进 toolkit `libs/os` 的 `openDateTimeSettings()`，**仅支持 Windows**，其他平台返回 `{ opened: false, reason: 'unsupported-platform' }`，启动失败返回 `reason: 'open-failed'`，不抛异常；Windows 改为进程启动即返回（实测 rundll32 在对话框关闭前不退出，原写法调用一直挂着）。两个宿主删除自己的实现；页面 `opened` 为 false 时弹窗（`$Modal.warning`）提示手动修改。Windows 两个项目打包实测通过；Linux / macOS 打开面板不做 |
 | F7-B1 | frame | 待确认 | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 仅影响本地调试 |
 | F7-B2 | frame | 待确认 | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 仅影响本地调试 |
 | F7-B3 | frame | 待确认 | 生产构建不删除 console 输出（bake 有 `drop_console`） | 安装包保留 console 输出，体积略大 |
@@ -162,6 +162,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
   真机由用户在测试机上按测试清单手动测试，日志交回分析。未实测的部分在清单中标「未实测」。
 - F7-R3 复查新发现：打不开时间设置时两个页面都可能不提示（问卷非 Windows 无反应；整合 Windows 打开失败无提示）。
 - 修正清单格式：F11 行内的换行、F14 后的残行。
+- F7-R3 完成：toolkit `openDateTimeSettings()`（仅 Windows），两个宿主改用，页面不支持 / 打开失败时弹窗提示；两个项目 Windows 打包实测（模拟后台返回偏差 3 天的服务器时间）通过。
 
 ### 8.1 2026-11-21 完成
 

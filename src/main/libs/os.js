@@ -2,7 +2,7 @@
  * 平台检测与系统信息工具（Windows / Linux / macOS / Loongnix 等）。
  */
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const logger = require('./logger');
 
 /**
@@ -80,4 +80,43 @@ exports.linuxArch = function linuxArch() {
 exports.lsbRelease = function lsbRelease() {
     if (!exports.isLinux()) return '';
     return run('lsb_release -i -s');
+};
+
+/**
+ * 打开系统的「日期和时间」设置，供启动页在系统时间与服务器偏差过大时引导用户修改。
+ *
+ * 目前只支持 Windows：用 `rundll32` 打开 `timedate.cpl`（Win11 会转到「设置」的日期和时间页）。
+ * 该进程在设置窗口关闭前不会退出，所以进程启动成功即视为已打开，不等它结束。
+ * 其他平台返回 `{ opened: false, reason: 'unsupported-platform' }`，由页面提示用户手动修改。
+ *
+ * @returns {Promise<{opened: boolean, reason?: string}>}
+ *   reason：`unsupported-platform` 当前平台不支持；`open-failed` 启动设置程序失败
+ */
+exports.openDateTimeSettings = function openDateTimeSettings() {
+    if (!exports.isWindows()) {
+        logger.warn('[os] 当前平台不支持打开时间设置', os.platform());
+        return Promise.resolve({ opened: false, reason: 'unsupported-platform' });
+    }
+    return new Promise(resolve => {
+        let child;
+        try {
+            // 不起 shell、参数以数组传入
+            child = spawn('rundll32.exe', ['shell32.dll,Control_RunDLL', 'timedate.cpl'], {
+                stdio: 'ignore',
+            });
+        } catch (err) {
+            logger.error('[os] 打开时间设置失败', err);
+            resolve({ opened: false, reason: 'open-failed' });
+            return;
+        }
+        child.once('spawn', () => {
+            child.unref();
+            logger.info('[os] 已打开时间设置');
+            resolve({ opened: true });
+        });
+        child.once('error', err => {
+            logger.error('[os] 打开时间设置失败', err);
+            resolve({ opened: false, reason: 'open-failed' });
+        });
+    });
 };

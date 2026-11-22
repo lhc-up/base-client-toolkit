@@ -7,9 +7,10 @@ const nodeOs = require('node:os');
 
 // os.js 加载时解构 execSync，spy 必须在 require 之前装好
 const execSync = vi.spyOn(childProcess, 'execSync');
+const spawn = vi.spyOn(childProcess, 'spawn');
 const platform = vi.spyOn(nodeOs, 'platform');
 
-const loggerMock = { error: vi.fn() };
+const loggerMock = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
 const loggerPath = require.resolve('../src/main/libs/logger.js');
 require.cache[loggerPath] = {
     id: loggerPath, filename: loggerPath, loaded: true,
@@ -20,12 +21,16 @@ const toolkitOs = require('../src/main/libs/os.js');
 
 beforeEach(() => {
     execSync.mockReset();
+    spawn.mockReset();
     platform.mockReset();
     loggerMock.error.mockClear();
+    loggerMock.warn.mockClear();
+    loggerMock.info.mockClear();
 });
 
 afterAll(() => {
     execSync.mockRestore();
+    spawn.mockRestore();
     platform.mockRestore();
     delete require.cache[loggerPath];
 });
@@ -70,5 +75,62 @@ describe('main/libs/os：Linux 信息返回去掉换行的字符串（K17）', (
         expect(toolkitOs.lsbRelease()).toBe('');
         expect(toolkitOs.isLoongnix()).toBe(false);
         expect(execSync).not.toHaveBeenCalled();
+    });
+});
+
+describe('main/libs/os：openDateTimeSettings（F7-R3）', () => {
+    const { EventEmitter } = require('node:events');
+
+    function fakeChild() {
+        const child = new EventEmitter();
+        child.unref = vi.fn();
+        return child;
+    }
+
+    it('非 Windows 返回 unsupported-platform，不执行任何命令', async () => {
+        for (const name of ['linux', 'darwin']) {
+            platform.mockReturnValue(name);
+            await expect(toolkitOs.openDateTimeSettings()).resolves.toEqual({
+                opened: false,
+                reason: 'unsupported-platform',
+            });
+        }
+        expect(spawn).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalledTimes(2);
+    });
+
+    it('Windows：进程启动即返回 opened: true，不等进程结束', async () => {
+        platform.mockReturnValue('win32');
+        const child = fakeChild();
+        spawn.mockReturnValue(child);
+        const result = toolkitOs.openDateTimeSettings();
+        child.emit('spawn');
+        await expect(result).resolves.toEqual({ opened: true });
+        expect(spawn).toHaveBeenCalledWith(
+            'rundll32.exe',
+            ['shell32.dll,Control_RunDLL', 'timedate.cpl'],
+            { stdio: 'ignore' },
+        );
+        expect(child.unref).toHaveBeenCalled();
+    });
+
+    it('Windows：启动失败返回 open-failed 并记 error 日志', async () => {
+        platform.mockReturnValue('win32');
+        const child = fakeChild();
+        spawn.mockReturnValue(child);
+        const result = toolkitOs.openDateTimeSettings();
+        child.emit('error', new Error('spawn ENOENT'));
+        await expect(result).resolves.toEqual({ opened: false, reason: 'open-failed' });
+        expect(loggerMock.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('Windows：spawn 同步抛异常也返回 open-failed', async () => {
+        platform.mockReturnValue('win32');
+        spawn.mockImplementation(() => { throw new Error('EPERM'); });
+        await expect(toolkitOs.openDateTimeSettings()).resolves.toEqual({
+            opened: false,
+            reason: 'open-failed',
+        });
+        expect(loggerMock.error).toHaveBeenCalledTimes(1);
     });
 });
