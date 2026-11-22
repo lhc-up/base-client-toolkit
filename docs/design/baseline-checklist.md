@@ -80,7 +80,7 @@
 | F7-B1 | frame | 已完成（2026-11-22，frame `4949223`） | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 用户决定：新增可选参数 `--inspect [port]`，不传时行为不变；默认端口 9229（与 Node 一致，VS Code 附加、`chrome://inspect` 无需配置），同时加 `--trace-warnings`；不加 bake 的 `--unhandled-rejections=strict`（开发与打包行为会不一致，F7-R1 已记日志）；端口非 1–65535 整数报错退出；`--pkg-only` 时提示不起作用。调试端口与 dev server 端口 8023 提为常量。问卷实测：9229 可连接并在主进程执行语句，不传参数不占端口，关闭 Electron 后 `dev:app` 正常退出 |
 | F7-B2 | frame | 不改（2026-11-22 用户决定） | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 用户不要关闭后询问重启的交互；保持关闭 Electron 即停止 dev server 并退出 |
 | F7-B3 | frame | 不改（2026-11-22 用户决定） | 生产构建不删除 console 输出（bake 有 `drop_console`） | 保持 terser 默认。依据：两个项目 main / preload 无 console 调用，toolkit 不打进 bundle；renderer 的 console 体积可忽略；客户端日志经主进程 logger 落盘，不依赖 console；问卷 web 端 logger 的 warn / error 就是 console，全删会看不到 web 端错误 |
-| F7-B4 | frame | 待确认 | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 循环 import 不在构建期提示 |
+| F7-B4 | frame | 已完成（2026-11-22，frame `583ee2b`） | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 用户决定：frame 自带检测（不引入 `circular-dependency-plugin`），main / preload / renderer / web 都加；只查项目代码（排除 `node_modules`），`import`、`require` 及混用都算，`import()` 不算，CommonJS 指向自身的连接不算；强连通分量一次找出，每组报一条最短路径（注明组内文件数）；默认警告并打印路径，`bc.config` `circularDependency: 'error'` 构建失败、`false` 关闭。实测：两个项目当前 0 个循环（改前用临时脚本、改后用插件各测一次）；问卷临时加 a ↔ b 循环，警告与报错两种模式输出符合预期 |
 | F7-S1 | frame / toolkit | 存疑 | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有） | 两个项目都 `encrypt: false`，目前无影响；开启加密后页面会加载不出来 |
 | F7-S2 | frame | 存疑 | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 没找到收窄的说明 |
 | F7-S3 | toolkit / 接入层 | 存疑 | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 两个项目都没有调用方 |
@@ -164,7 +164,8 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - 修正清单格式：F11 行内的换行、F14 后的残行。
 - F7-R3 完成：toolkit `openDateTimeSettings()`（仅 Windows），两个宿主改用，页面不支持 / 打开失败时弹窗提示；两个项目 Windows 打包实测（模拟后台返回偏差 3 天的服务器时间）通过。
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
-- F7-B2、F7-B3 不改（用户决定）。下一条 F7-B4。
+- F7-B2、F7-B3 不改（用户决定）。
+- F7-B4 完成：frame 自带循环依赖检测，默认警告。下一条 F7-S1。
 
 ### 8.1 2026-11-21 完成
 
