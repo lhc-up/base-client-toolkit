@@ -1,5 +1,26 @@
 const { BrowserWindow } = require('electron');
 const merge = require('lodash.merge');
+const Logger = require('../libs/logger');
+
+/** 加载被新的跳转打断，不是失败 */
+const ERR_ABORTED = -3;
+
+/**
+ * 主页面加载失败、渲染进程退出时写错误日志。子 frame（如交互题 iframe）不记，免得刷屏。
+ *
+ * @param {import('electron').BrowserWindow} window
+ */
+function logLoadFailures(window) {
+    window.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        if (!isMainFrame || errorCode === ERR_ABORTED) {
+            return;
+        }
+        Logger.error('[窗口] 页面加载失败', { errorCode, errorDescription, url: validatedURL });
+    });
+    window.webContents.on('render-process-gone', (event, details) => {
+        Logger.error('[窗口] 渲染进程退出', { reason: details.reason, exitCode: details.exitCode });
+    });
+}
 
 /**
  * BrowserWindow 抽象基类。
@@ -68,9 +89,13 @@ class BaseWindow {
      * 创建 BrowserWindow 并绑定生命周期。
      *
      * 流程：读子类 options → 深合并默认 → 构造 BrowserWindow → 绑 'closed' →
-     * 触发 onCreated → loadURL。
+     * 触发 onCreated → 绑加载失败 / 渲染进程退出的日志 → loadURL。
      *
      * onCreated 严格早于 loadURL，保证用户绑的早期事件不因 loadURL 已触发而漏掉。
+     *
+     * 主页面加载失败时窗口照样 ready-to-show，但只有白屏；`loadURL` 的 reject 不接住时
+     * Electron 只往 stderr 打一行警告，不触发 unhandledRejection（Electron 22 实测），
+     * 日志里什么都没有。因此在这里统一记日志，不通知页面（失败的正是这个页面）。
      *
      * @returns {import('electron').BrowserWindow}
      */
@@ -89,7 +114,10 @@ class BaseWindow {
         });
 
         this.onCreated(window);
-        window.loadURL(this.getPageUrl());
+        logLoadFailures(window);
+        window.loadURL(this.getPageUrl()).catch(() => {
+            // 失败已由 did-fail-load 记录，这里不再处理（Electron 仍会往 stderr 打一行 Failed to load URL）
+        });
 
         return window;
     }
