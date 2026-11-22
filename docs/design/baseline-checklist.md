@@ -77,7 +77,7 @@
 | F7-R1 | 接入层（两个宿主） | 已完成（2026-11-21，问卷 `d515b706`，整合 `9d4b56b`） | 主进程未捕获的异常与 Promise 拒绝不写日志 | 用户决定不放 toolkit（全局监听会改变进程行为，属宿主决策）；两个宿主入口各自监听并记日志，不测默认行为 |
 | F7-R2 | 接入层（整合） | 暂缓（用户决定先不修） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
 | F7-R3 | toolkit / 接入层（两个宿主） | 已完成（2026-11-22，toolkit / 问卷 / 整合见 §8.0） | 「打开系统时间设置」只支持 Windows；复查发现打不开时两个页面都可能不提示（问卷非 Windows 点击无反应，整合 Windows 打开失败无提示）；两个宿主各写一份 | 用户决定：收进 toolkit `libs/os` 的 `openDateTimeSettings()`，**仅支持 Windows**，其他平台返回 `{ opened: false, reason: 'unsupported-platform' }`，启动失败返回 `reason: 'open-failed'`，不抛异常；Windows 改为进程启动即返回（实测 rundll32 在对话框关闭前不退出，原写法调用一直挂着）。两个宿主删除自己的实现；页面 `opened` 为 false 时弹窗（`$Modal.warning`）提示手动修改。Windows 两个项目打包实测通过；Linux / macOS 打开面板不做 |
-| F7-B1 | frame | 待确认 | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 仅影响本地调试 |
+| F7-B1 | frame | 已完成（2026-11-22，frame `4949223`） | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 用户决定：新增可选参数 `--inspect [port]`，不传时行为不变；默认端口 9229（与 Node 一致，VS Code 附加、`chrome://inspect` 无需配置），同时加 `--trace-warnings`；不加 bake 的 `--unhandled-rejections=strict`（开发与打包行为会不一致，F7-R1 已记日志）；端口非 1–65535 整数报错退出；`--pkg-only` 时提示不起作用。调试端口与 dev server 端口 8023 提为常量。问卷实测：9229 可连接并在主进程执行语句，不传参数不占端口，关闭 Electron 后 `dev:app` 正常退出 |
 | F7-B2 | frame | 待确认 | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 仅影响本地调试 |
 | F7-B3 | frame | 待确认 | 生产构建不删除 console 输出（bake 有 `drop_console`） | 安装包保留 console 输出，体积略大 |
 | F7-B4 | frame | 待确认 | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 循环 import 不在构建期提示 |
@@ -163,6 +163,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - F7-R3 复查新发现：打不开时间设置时两个页面都可能不提示（问卷非 Windows 无反应；整合 Windows 打开失败无提示）。
 - 修正清单格式：F11 行内的换行、F14 后的残行。
 - F7-R3 完成：toolkit `openDateTimeSettings()`（仅 Windows），两个宿主改用，页面不支持 / 打开失败时弹窗提示；两个项目 Windows 打包实测（模拟后台返回偏差 3 天的服务器时间）通过。
+- F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。下一条 F7-B2。
 
 ### 8.1 2026-11-21 完成
 
