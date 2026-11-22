@@ -66,7 +66,7 @@
 | F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
-| F15 | P1 | 待确认（2026-11-22 新发现，F7 子清单之后逐项确认） | frame 对 electron-builder 的预设很薄（只有产物布局、名称、安装脚本与图标回填、龙芯镜像），两个项目各写近乎全量的配置且约九成相同：`asar`、`mac.identity`、`dmg.title`、`win` 四个字段、签名配置、`linux` 五个字段、`nsis` 十个字段中九个、`artifactName` 的环境标识映射；问卷还手写了 frame 本会补的 `deb.fpm` / `nsis.include` | 方向同 F6：通用部分收进 frame 打包预设（项目写了以项目为准），业务只留发布后不能改的值（`appId`、`nsis.guid`、`deb.packageName`）与真正的业务取值（如 `nsis.runAfterFinish`）；逐项确认 | 待定 |
+| F15 | P1 | 待确认（2026-11-22 新发现并已逐字段核对，F7 子清单之后处理） | frame 对 electron-builder 的预设很薄（产物布局、`productName` / `copyright` / `artifactName`、图标 / `nsis.include` / `deb.fpm` 回填、龙芯镜像），两个项目各写近乎全量的配置且约九成相同 | 核对依据：frame 回填逻辑与 electron-builder 24.13.3 源码。① 写了但不需要（删除后产物不变）：`asar: true`（默认开启）、`linux.vendor`（默认取 maintainer）、`linux.executableName`（默认 name 转小写，两项目 name 已是小写）、`deb.priority: optional`（默认值）、`nsis.allowElevation: true`（默认开启）、`nsis.shortcutName: ${productName}`（默认 sanitizedProductName，结果相同）、`win.publisherName`（只用于 electron-updater 发布信息，未使用）；问卷另有 `deb.fpm`、`nsis.include`（frame 会回填）。② 疑似错误：两项目 `mac.identity: APP_ID`（identity 是 macOS 签名证书名，不是 appId；macOS 本期不验证）。③ 适合收进 frame 预设：`linux.maintainer = author`（deb 必填，author 为字符串无 email 时不写即报 authorEmailIsMissed）、`linux.executableName = name`（与安装脚本模板的 `APP_NAME` 保持一致，防止 name 含大写时被转小写而对不上，关联 F7-S8）。④ 两边相同但属业务取舍、逐项由用户定：`win.requestedExecutionLevel`、nsis 的 `oneClick` / `allowToChangeInstallationDirectory` / `perMachine` / `deleteAppDataOnUninstall` / `language` / `uninstallDisplayName`、`dmg.title`、`linux.category`、`artifactName` 的环境标识映射（prod → release）。⑤ 留在业务：`appId`、`nsis.guid`、`deb.packageName`（发布后不能改）、`copyright`、`win.legalTrademarks`、`nsis.runAfterFinish`、签名配置（《证书文件契约》规定由业务配置）、`linux.executableArgs`（F7-S5 决定留在项目中） | 改前改后合并配置与产物对比（Windows 本机）；Linux deb 的 maintainer / 可执行文件名由 `dpkg-deb -f` / 安装后检查 |
 
 ### 3.1 F7 子清单：bake 功能对照发现的问题
 
@@ -235,7 +235,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 | # | 问题（简） |
 |---|---|
-| F15 | electron-builder 预设很薄，两个项目各写近乎全量配置且约九成相同（F7 子清单之后逐项确认） |
+| F15 | electron-builder 预设很薄，两个项目各写近乎全量配置；已逐字段核对（多余 9 项、疑似错误 1 项、可收进 frame 2 项、待定 6 组），F7 子清单之后处理 |
 
 **三、暂缓 / 只记录不做**
 
