@@ -177,6 +177,14 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-B4 完成：frame 自带循环依赖检测，默认警告。
 - §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。F7-S5 不改、补文档。新编 F15（electron-builder 预设）。F7-S6 ①②完成（去掉默认菜单、DevTools 热键统一）。下一条 F7-S6 ③。
 
+**交接（2026-11-22 收工）**
+
+- 四个仓库均已提交、未推送（toolkit `0f39c26`、frame `655ddc5`、问卷 `dc2dac84`、整合 `c50bbc4`）；frame 的未跟踪目录 `docs/plans/` 早于本次工作，未动。
+- 用户定的顺序：先逐条确认、修复 F7 子清单 → 再做 F15 → 其余见 §8.4。
+- **待用户回复的提案：F7-S6 ③ Linux 窗口图标**（已发，未选）。要点：electron-builder 的 `.desktop` 用 `StartupWMClass: productName` 关联窗口，源码注释写明不支持 unicode，中文 productName 时桌面环境多半对不上图标；整合 `libs/icon.js` 找的 `resources/icons/512x512.png` 不存在、实际不起作用，问卷迁移时删掉了。方案：frame `pack` 把生成的 512 PNG 复制为安装包 `resources/window-icon.png`（文件名作为两包约定集中定义并单测断言）；toolkit `BaseWindow` 在 Linux 且文件存在时默认设 `icon`（项目写了以项目为准）；整合删 `libs/icon.js` 与两处 `icon: getIconPath()`。选项：1 按方案 / 2 只修整合 / 3 不改等真机确认 / 4 其他。
+- 之后依次：F7-S6 ④（用浏览器打开链接：整合有 `window.openExternal` 且启动页在用，问卷页面无调用方）→ F7-S7 → F7-S8 → F7-T1–T4 → F15。
+- 本日实测手法（Windows 本机）：模拟按键用 PowerShell `Add-Type` 调 `user32 keybd_event`（SendKeys 常丢焦点）；由主进程等按键脚本写出标记文件后再检查，不用固定计时；`dev:app --inspect <port>` 后经 CDP `Runtime.evaluate` + `process.mainModule.require('electron')` 检查主进程状态。
+
 ### 8.1 2026-11-21 完成
 
 - 后半段：F6、F8、F11 完成；F12、K19 决定不改；F14 并入 F13；F7 盘点完成，发现的问题记入 §3.1 子清单（F7-R1 完成，F7-R2 暂缓）。四个仓库均只在本地提交、未推送，toolkit / frame 在 `master` 且未配置远程。
