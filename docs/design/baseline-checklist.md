@@ -83,7 +83,7 @@
 | F7-B4 | frame | 已完成（2026-11-22，frame `583ee2b`） | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 用户决定：frame 自带检测（不引入 `circular-dependency-plugin`），main / preload / renderer / web 都加；只查项目代码（排除 `node_modules`），`import`、`require` 及混用都算，`import()` 不算，CommonJS 指向自身的连接不算；强连通分量一次找出，每组报一条最短路径（注明组内文件数）；默认警告并打印路径，`bc.config` `circularDependency: 'error'` 构建失败、`false` 关闭。实测：两个项目当前 0 个循环（改前用临时脚本、改后用插件各测一次）；问卷临时加 a ↔ b 循环，警告与报错两种模式输出符合预期 |
 | F7-S1 | frame / toolkit | 已完成（2026-11-22，frame `2af0b11`） | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有）；复查还发现 `app/preload/` 也会被加密（Electron 直接读，拦截协议也解不了），且默认就开启（不写 `encrypt` 时 `pack` 要求 key） | 用户决定：暂不支持加密。不写 `encrypt` 或写 `false` 为不加密，写了其他值打包前直接报错（不清 dist）；加密实现保留（`parseEncryptConfig` / `encryptRenderer` 与单测），文档写明暂不支持；两个项目的 `encrypt: false` 保留不动。问卷实测：写 encrypt 报错且 dist 保留、不写 encrypt 正常打包（描述文件 `encrypted: false`）、原配置正常 |
 | F7-S2 | frame | 搁置（2026-11-22，随 F7-S1） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
-| F7-S3 | toolkit / 接入层 | 存疑 | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 两个项目都没有调用方 |
+| F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
 | F7-S4 | 接入层 | 存疑 | 页面加载失败（`did-fail-load`）不通知渲染层 | bake 渲染层也没有监听方 |
 | F7-S5 | 接入层 | 存疑 | `no-sandbox`：bake 设置，两个项目都没有（deb 安装脚本会给 chrome-sandbox 设 SUID） | 需 Linux / 龙芯真机验证（§5） |
 | F7-S6 | 接入层 | 存疑 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 | 没找到问卷有意不做的说明 |
@@ -166,7 +166,7 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
 - F7-B2、F7-B3 不改（用户决定）。
 - F7-B4 完成：frame 自带循环依赖检测，默认警告。
-- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。下一条 F7-S3。
+- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。下一条 F7-S4。
 
 ### 8.1 2026-11-21 完成
 
@@ -207,7 +207,6 @@ Linux / 龙芯行同时覆盖 K15：dpkg 安装与 openShell 安装两条路径�
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S3 | toolkit / 接入层 | 键盘锁定原生插件 `block-keyboard` 没有了，两个项目也没有调用方 |
 | F7-S4 | 接入层 | 页面加载失败（`did-fail-load`）不通知渲染层，bake 渲染层也没有监听方 |
 | F7-S5 | 接入层 | `no-sandbox`：bake 设置，两个项目都没有，需 Linux / 龙芯真机验证 |
 | F7-S6 | 接入层 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 |
