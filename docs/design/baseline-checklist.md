@@ -87,7 +87,7 @@
 | F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
 | F7-S4 | toolkit | 已完成（2026-11-22，toolkit `64d401e`） | 页面加载失败（`did-fail-load`）不通知渲染层；复查发现真正的问题是加载失败时日志里什么都没有：`BaseWindow` 不接 `loadURL` 的 reject、没人监听 `did-fail-load`，Electron 22 实测窗口照样 ready-to-show 但白屏，失败只打到 stderr、不触发 unhandledRejection（F7-R1 也接不到）；渲染进程崩溃同样无记录 | 用户决定：不通知页面（失败的正是该页面，bake 页面也没有监听方）；toolkit `BaseWindow.create()` 监听主页面 `did-fail-load`（忽略子 frame 与 -3 ERR_ABORTED）与 `render-process-gone` 写 ERROR 日志，`loadURL` 加 catch；两个项目不用改。实测：Electron 22 加载缺失文件与强制崩溃渲染进程，日志文件各记一条；问卷 `dev:app` 正常启动无误报 |
 | F7-S5 | 接入层 | 不改（2026-11-22 用户决定），文档已补（frame `655ddc5`、问卷 `ee674197`、整合 `0d4909f`） | `no-sandbox`：bake 在主进程 `appendSwitch`，两个项目只在 builder 配置写 `linux.executableArgs`（问卷迁移时删掉了原有的 `appendSwitch`） | 查明：`executableArgs` 只写进 `.desktop` 的 `Exec=`（electron-builder 24.13.3 `LinuxTargetHelper.js`），桌面图标 / 应用菜单启动带参数，终端 `/usr/bin/<name>` 不带；root 检查早于主进程 JS，`appendSwitch` 很可能来不及生效（按 Chromium 启动顺序判断，未实测）。用户决定不支持终端以 root 启动：frame README 新增「Linux 启动与沙箱」，两个项目 `executableArgs` 注释写明原因与生效范围；不收进 frame（留在项目配置中直观可见）。真机验证见 §5 Linux 补充项 |
-| F7-S6 | 接入层 | 存疑 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 | 没找到问卷有意不做的说明 |
+| F7-S6 | toolkit / 接入层 | 部分完成（2026-11-22：①② 完成，toolkit `a1f6bb3`、问卷 `dc2dac84`、整合 `c50bbc4`；③④ 待确认） | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有（问卷迁移 `12f8ca8c` 时删掉了原有的 DevTools 热键、F11 拦截、窗口图标、浏览器打开链接） | ① 新发现：两个宿主都没去掉 Electron 默认菜单，无边框窗口里 `Ctrl+R` 刷新、`Ctrl+Shift+I` 开 DevTools、`F11` 全屏照样生效（Electron 22 对照实测：去掉菜单后同样的按键送达但不再生效）。② DevTools 热键不一致，toolkit `libs/shortcut` 已有实现但无人使用且加载即挂 will-quit。用户决定：toolkit 提供 `removeDefaultMenu()`（Windows / Linux 设 null，macOS 保留应用与编辑菜单）与 `registerDevToolsShortcut()`（默认 `Command+Control+Alt+F5`，停靠底部，只注销自己的热键，加载无副作用）；两个宿主在创建窗口前调用；整合删除自己的 DevTools 热键与 F11 拦截，退出热键保留（属 F7-R2）。实测：`Command` 在 Windows 上是 Win 键（按 Ctrl+Alt+F5 不触发，Win+Ctrl+Alt+F5 触发）；去掉菜单后输入框复制粘贴正常、Ctrl+R 不再刷新；两个项目 `dev:app` 经主进程调试端口确认菜单为 null、热键已注册。③ Linux 窗口图标：整合代码找 `resources/icons/512x512.png` 不存在，实际不起作用；问卷没有。④ 用浏览器打开链接：整合有能力且启动页在用，问卷页面无调用方 |
 | F7-S7 | frame | 存疑 | 第三方库不单独拆 vendor 文件（bake 有） | 客户端影响很小 |
 | F7-S8 | frame | 存疑 | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | bake 待办未完成 |
 | F7-T1 | frame | 待确认 | 可视化打包（bake 待办，未完成） | — |
@@ -175,7 +175,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-B1 完成：`dev:app --inspect [port]`（默认 9229），问卷本地调试实测通过。
 - F7-B2、F7-B3 不改（用户决定）。
 - F7-B4 完成：frame 自带循环依赖检测，默认警告。
-- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。F7-S5 不改、补文档。新编 F15（electron-builder 预设）。下一条 F7-S6。
+- §8.4 改为剩余问题总表。F7-S1 完成（加密暂不支持，配置即报错），F7-S2 随之搁置。F7-S3 不改。F7-S4 完成（BaseWindow 记加载失败与渲染进程退出）。F7-S5 不改、补文档。新编 F15（electron-builder 预设）。F7-S6 ①②完成（去掉默认菜单、DevTools 热键统一）。下一条 F7-S6 ③。
 
 ### 8.1 2026-11-21 完成
 
@@ -216,7 +216,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S6 | 接入层 | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有 |
+| F7-S6 | 接入层 | ①② 已完成；剩 ③ Linux 窗口图标（整合的实现实际不起作用）、④ 用浏览器打开链接 |
 | F7-S7 | frame | 第三方库不单独拆 vendor 文件，客户端影响很小 |
 | F7-S8 | frame | `package.json` 的 name 支持什么格式没有结论，frame 不校验 |
 | F7-T1 | frame | 可视化打包（bake 待办） |
