@@ -229,16 +229,21 @@ toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定
 `log4js` / `electron-store` / `semver` 的缺失会在**安装期**暴露（`peerDependencies` 未标 optional），
 不会等到运行期加载某个模块才抛。
 
-## 热键配置（shortcut）
+## 应用菜单与热键（shortcut）
+
+宿主在 `app.whenReady()` 中、创建第一个窗口之前调用：
 
 ```js
-const shortcut = require('@base-client/toolkit/main/libs/shortcut');
+const { removeDefaultMenu, registerDevToolsShortcut } = require('@base-client/toolkit/main/libs/shortcut');
 
-// 默认 F6（Command+Control+Alt+F6）
-shortcut();
+// 去掉 Electron 默认菜单：不去掉时 Ctrl+R 刷新、Ctrl+Shift+I 打开 DevTools、F11 全屏等快捷键
+// 在无边框窗口里照样生效。macOS 保留只含「应用」「编辑」的最小菜单（输入框复制粘贴依赖它）
+removeDefaultMenu();
 
-// 兼容业务历史习惯，指定 F5
-shortcut({ devToolsKey: 'Command+Control+Alt+F5' });
+// 打开所有窗口 DevTools 的全局热键（停靠底部），默认 Command+Control+Alt+F5；
+// Command 在 Windows 上是 Win 键（实测），Linux 上是 Super 键，即实际按 Win / Super + Ctrl + Alt + F5。
+// 返回是否注册成功，will-quit 时只注销这一个热键
+registerDevToolsShortcut();
 ```
 
 ## 系统信息（os）
