@@ -179,6 +179,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F15 ② 完成：两个项目 `mac.identity: APP_ID` 改为 `null`（原值是 appId 不是证书名，macOS 上找不到证书即跳过签名；改为 null 后行为不变、写法正确；macOS 未验证）。
 - F15 ③ 完成：frame 预设在 `author` 为字符串时默认 `linux.maintainer = author`（对象写法不设置：electron-builder 会把 maintainer 原样作为 fpm 参数，带 email 的对象它能自行处理），两个项目删除该行，合并后配置不变；`linux.executableName` 因 F7-S8 不再需要。README 新增「electron-builder 预设」。下一组 F15 ④（业务取舍逐项定）。
 - F15 ④-1 完成：`win.requestedExecutionLevel: highestAvailable` 收进 frame 预设（用户决定），两个项目删除；合并后配置不变，打包后 exe 清单为 highestAvailable。
+- F15 ④-2 完成：nsis 的 `oneClick`、`allowToChangeInstallationDirectory`、`perMachine`、`deleteAppDataOnUninstall`、`language`、`uninstallDisplayName` 收进 frame 预设（用户决定，`deleteAppDataOnUninstall` 保持 true），两个项目删除；合并后配置不变，问卷 Windows 完整打包成功。已告知用户：`deleteAppDataOnUninstall` 卸载时（升级除外）会删除 `%APPDATA%\专项数据采集系统`，两个客户端 productName 相同、共用该目录，卸载其一会删除另一个的数据（按 `uninstaller.nsh:218-225` 推断，未实测）；README 已写明。
 - 讨论中由 `resources/packages/` 的复制规则引出 F16（安装包 `resources/` 先整理到 `dist/resources/` 再整体复制），用户确认后完成，详见 §3 F16。
 
 ### 8.0.1 2026-11-22
