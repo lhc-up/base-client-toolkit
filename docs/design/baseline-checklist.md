@@ -91,7 +91,6 @@
 | F7-S6 | toolkit / 接入层 | 部分完成（2026-11-22：①② 完成，toolkit `a1f6bb3`、问卷 `dc2dac84`、整合 `c50bbc4`；2026-11-23：③ 完成，Linux 未实测；④ 完成） | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有（问卷迁移 `12f8ca8c` 时删掉了原有的 DevTools 热键、F11 拦截、窗口图标、浏览器打开链接） | ① 新发现：两个宿主都没去掉 Electron 默认菜单，无边框窗口里 `Ctrl+R` 刷新、`Ctrl+Shift+I` 开 DevTools、`F11` 全屏照样生效（Electron 22 对照实测：去掉菜单后同样的按键送达但不再生效）。② DevTools 热键不一致，toolkit `libs/shortcut` 已有实现但无人使用且加载即挂 will-quit。用户决定：toolkit 提供 `removeDefaultMenu()`（Windows / Linux 设 null，macOS 保留应用与编辑菜单）与 `registerDevToolsShortcut()`（默认 `Command+Control+Alt+F5`，停靠底部，只注销自己的热键，加载无副作用）；两个宿主在创建窗口前调用；整合删除自己的 DevTools 热键与 F11 拦截，退出热键保留（属 F7-R2）。实测：`Command` 在 Windows 上是 Win 键（按 Ctrl+Alt+F5 不触发，Win+Ctrl+Alt+F5 触发）；去掉菜单后输入框复制粘贴正常、Ctrl+R 不再刷新；两个项目 `dev:app` 经主进程调试端口确认菜单为 null、热键已注册。③ Linux 窗口图标：整合读 `resources/icons/512x512.png`（`8b5db00` 起已在项目 `resources/icons/` 中，随 `resources/` 进安装包），是起作用的（2026-11-23 更正，原记「不存在、不起作用」有误）；问卷没有。用户决定（2026-11-23）：图标只保留 `build/icon.png` 一份，frame 打包时原样复制为安装包 `resources/app-icon.png`（两包约定 `APP_ICON_FILE`；项目 `resources/` 里也有该文件时构建报错）；toolkit `BaseWindow` 在 Linux 且文件存在时默认设 `icon`（项目写了以项目为准）；整合删除 `resources/icons/`（15 个文件）与 `libs/icon.js`，问卷不用改。Windows 两个项目 `pack --dir` 确认 `app-icon.png` 与 `build/icon.png` 一致、整合打包运行正常；Linux 显示效果未实测（见 §5 测试清单）。④ 用浏览器打开链接：整合有自己的 `window.openExternal` 能力且启动页在用；问卷没有，页面里两处 `target="_blank"`（手机版 ICP 链接、浏览器下载弹窗）在客户端中走不到。复查新发现：两个宿主与 `BaseWindow` 都没有 `setWindowOpenHandler`，页面的 `target="_blank"` / `window.open` 会在客户端里新开不受管理的 Electron 窗口（Electron 22 实测：点两个链接后窗口数 3）。用户决定（2026-11-23）：toolkit `BaseWindow` 统一处理新窗口（http(s) 交给 `shell.openExternal`，其他忽略并记警告，一律 deny；先于 `onCreated` 设置，子类可覆盖）；两个宿主各自的 `window` 能力（含整合的 `openExternal`）保留、不提取到 toolkit（方法少、两宿主各有差异）。Electron 22 实测：点链接、`window.open` 均交给系统浏览器，`file://` 被忽略，窗口数保持 1 |
 | F7-S7 | frame | 已完成（2026-11-23，frame 本次提交） | 第三方库不单独拆 vendor 文件（bake 有）。复查：主页面与启动页是同一次构建的两个入口，frame 未配 `splitChunks`，两边共用的库在 `index.js`、`update.js` 各打一份（整合两文件 899 / 891 KB），更新包多约 1.2 MB，每次热更新都要多下载；原记「客户端影响很小」只考虑了页面加载 | 用户决定：renderer 预设生产环境默认 `optimization.splitChunks: { chunks: 'all' }`（项目写了以项目为准，web 不变）；不照搬 bake 的单一 `vendor`（会让启动页加载主页面独有的库）。拆出的文件与两个页面同在一个包的 `renderer/` 下、相对路径加载，不会与其他版本的包混用。实测：更新包整合 5.21 → 4.00 MB、问卷 15.26 → 14.10 MB；两项目 Windows 打包运行，经 CDP 确认启动页与主页面（整合首页、问卷登录页）正常渲染并加载公共文件 |
 | F7-S8 | frame | 已完成（2026-11-23，frame 本次提交） | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | 调研结论：npm 不检查项目自身的 name（npm 10.9.2 实测大写、`@scope/`、空格、中文均可 install / run），约束全部来自下游：Linux 可执行文件名（`sanitizeFileName`，未配 `executableName` 时还转小写）须与安装脚本未加引号的 `APP_NAME` 一致；Windows 安装目录名（productName 非 ASCII 时用 name）；更新包文件名；项目 appId `com.eachina.<name>`（AppUserModelID ≤128 字符、无空格）；name 还是与后台约定的标识，发布后不能改。用户决定：`dev:app` / `pack` / `installer` 启动时检查——小写字母、数字、`. _ -`，字母或数字开头，不以 `.` 结尾，非 Windows 保留名，≤116 字符，不支持作用域；规则与依据写在 frame README「package.json 的 name」与 `src/core/app-name.js`。满足规则时 electron-builder 默认可执行文件名与 name 相同，F15 的「`linux.executableName = name` 收进预设」可不做 |
-| F7-T1 | frame | 待确认 | 可视化打包（bake 待办，未完成） | — |
 | F7-T2 | frame | 待确认 | electron 镜像源（npmmirror）没有配置（bake 待办，未完成）；龙芯镜像已由 F8 内置 | — |
 | F7-T3 | frame | 待确认 | 本地 dev server 端口被占用时不会自动换端口（bake 待办，未完成），现在可用 `--port` 指定 | — |
 | F7-T4 | 接入层 | 待确认 | 云电脑环境下用户会话是否会串，没有结论（bake 待办，未完成） | 随机 partition 已去掉；问卷启动时清残留 cookie |
@@ -171,7 +170,8 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-S6 ③ 讨论：更正「整合图标文件不存在」（实际存在且起作用）；frame 的 `build/icon.png` → `dist/icons/` 多尺寸只用于打包配置（win / mac / linux 的 `icon`），不进安装包。用户决定由 frame 把 `build/icon.png` 原样复制为 `resources/app-icon.png`、toolkit `BaseWindow` 默认读取，已完成（详见 §3.1 F7-S6）。
 - F7-S6 ④ 完成：`BaseWindow` 统一处理新窗口（外部链接用系统浏览器打开），`window` 能力不提取。F7-S6 全部完成。
 - F7-S7 完成：renderer 生产构建默认拆分公共代码，更新包减少约 1.2 MB。
-- F7-S8 完成：客户端命令启动时检查 package.json 的 name（规则与依据见 frame README）。下一条 F7-T1。
+- F7-S8 完成：客户端命令启动时检查 package.json 的 name（规则与依据见 frame README）。
+- F7-T1（可视化打包）按用户要求从清单删除。下一条 F7-T2。
 - 讨论中由 `resources/packages/` 的复制规则引出 F16（安装包 `resources/` 先整理到 `dist/resources/` 再整体复制），用户确认后完成，详见 §3 F16。
 
 ### 8.0.1 2026-11-22
@@ -234,7 +234,6 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-T1 | frame | 可视化打包（bake 待办） |
 | F7-T2 | frame | electron 镜像源（npmmirror）没有配置（bake 待办） |
 | F7-T3 | frame | dev server 端口被占用时不自动换端口（bake 待办），现在可用 `--port` |
 | F7-T4 | 接入层 | 云电脑环境下用户会话是否会串，没有结论（bake 待办） |
