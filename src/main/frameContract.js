@@ -10,5 +10,7 @@ const DESCRIPTOR_FILE = 'package.json';
 const RESOURCES_DIR = 'resources';
 /** 资源目录下放内置包的子目录 */
 const BUILTIN_PKG_DIR = 'packages';
+/** 资源目录下的应用图标：frame 打包时从 build/icon.png 复制，BaseWindow 在 Linux 上用作窗口图标 */
+const APP_ICON_FILE = 'app-icon.png';
 
-module.exports = { DESCRIPTOR_FILE, RESOURCES_DIR, BUILTIN_PKG_DIR };
+module.exports = { DESCRIPTOR_FILE, RESOURCES_DIR, BUILTIN_PKG_DIR, APP_ICON_FILE };

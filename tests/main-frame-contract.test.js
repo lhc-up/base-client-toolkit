@@ -10,6 +10,7 @@ describe('与 frame 的约定', () => {
             DESCRIPTOR_FILE: 'package.json',
             RESOURCES_DIR: 'resources',
             BUILTIN_PKG_DIR: 'packages',
+            APP_ICON_FILE: 'app-icon.png',
         });
     });
 });

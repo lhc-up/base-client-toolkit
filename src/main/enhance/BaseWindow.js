@@ -1,6 +1,9 @@
+const fs = require('fs');
 const { BrowserWindow } = require('electron');
 const merge = require('lodash.merge');
 const Logger = require('../libs/logger');
+const { resolveResource } = require('../libs/resourceRoot');
+const { APP_ICON_FILE } = require('../frameContract');
 
 /** 加载被新的跳转打断，不是失败 */
 const ERR_ABORTED = -3;
@@ -20,6 +23,24 @@ function logLoadFailures(window) {
     window.webContents.on('render-process-gone', (event, details) => {
         Logger.error('[窗口] 渲染进程退出', { reason: details.reason, exitCode: details.exitCode });
     });
+}
+
+/**
+ * Linux 下的默认窗口图标：资源根目录下的应用图标（frame 打包时从 `build/icon.png` 复制）。
+ * 窗口直接设 icon，任务栏、Alt+Tab 不依赖 `.desktop` 的 `StartupWMClass` 能否关联上。
+ * 其他平台用可执行文件自带的图标；文件不存在（如本地调试）时不设。
+ *
+ * @returns {{ icon?: string }}
+ */
+function defaultIconOptions() {
+    if (process.platform !== 'linux') {
+        return {};
+    }
+    const iconPath = resolveResource(APP_ICON_FILE);
+    if (!iconPath || !fs.existsSync(iconPath)) {
+        return {};
+    }
+    return { icon: iconPath };
 }
 
 /**
@@ -60,7 +81,8 @@ class BaseWindow {
 
     /**
      * 返回 BrowserWindow 构造 options。默认为 `{}`。
-     * 与内置默认 `{ show: false, backgroundColor: '#ffffff' }` 深合并。
+     * 与内置默认 `{ show: false, backgroundColor: '#ffffff' }` 深合并；Linux 下内置默认还有 `icon`（资源根目录下的
+     * `app-icon.png`，存在时）。
      * @returns {import('electron').BrowserWindowConstructorOptions}
      */
     getWindowOptions() {
@@ -102,7 +124,7 @@ class BaseWindow {
     create() {
         const userOptions = this.getWindowOptions();
         const mergedOptions = merge(
-            { show: false, backgroundColor: '#ffffff' },
+            { show: false, backgroundColor: '#ffffff', ...defaultIconOptions() },
             userOptions,
         );
         const window = new BrowserWindow(mergedOptions);

@@ -182,7 +182,7 @@ toolkit 先复制为 `.asar` 临时副本再加载：
 | `resources/packages/*.asax`（内置的其他包） | `resources/packages/*.asar` | toolkit 选包（§4.1） |
 | —（自身的包由 frame 构建） | `resources/packages/<name>-<env>-v<版本>.asar` | 同上 |
 | `resources/addons/` | `resources/addons/` | 宿主经 `frameResourceDir` 传给子应用 |
-| `resources/icons/` | `resources/icons/` | Linux 窗口图标（整合客户端 `icon.js`） |
+| `build/icon.png`（frame 复制，项目 `resources/` 不放图标） | `resources/app-icon.png` | `BaseWindow` 在 Linux 上的默认窗口图标 |
 
 - **资源根目录由 toolkit 统一计算**（§2），依据 `isHostDev`：本地调试为 `<项目根目录>/resources`（`dev:app` 在项目根目录启动，取 `process.cwd()`），打包运行为 `process.resourcesPath`。
   内置包目录、图标、`frameResourceDir` 都基于它，业务代码不再自行判断调试或打包。
@@ -191,7 +191,7 @@ toolkit 先复制为 `.asar` 临时副本再加载：
   项目 `resources/` 整体复制（版本管理占位与系统生成的文件除外），其中 `packages/*.asax` 改名为 `.asar`，自身的包也放入 `packages/`；
   落盘名冲突（与自身包同名、同一个包同时有 `.asax` 与 `.asar`）时构建报错。项目不再在构建配置里写 `extraResources`。
 - `build/icon.png` 是 frame 生成安装包图标的构建输入，留在 `build/`，不属于运行时资源。
-- `.gitignore`：`resources/packages/*` 忽略（保留 `.gitkeep`），`addons`、`icons` 入库。
+- `.gitignore`：`resources/packages/*` 忽略（保留 `.gitkeep`），`addons` 入库。
 
 ## 8. 日志
 
