@@ -187,8 +187,9 @@ toolkit 先复制为 `.asar` 临时副本再加载：
 - **资源根目录由 toolkit 统一计算**（§2），依据 `isHostDev`：本地调试为 `<项目根目录>/resources`（`dev:app` 在项目根目录启动，取 `process.cwd()`），打包运行为 `process.resourcesPath`。
   内置包目录、图标、`frameResourceDir` 都基于它，业务代码不再自行判断调试或打包。
 - `frameResourceDir` 的值改为资源根目录本身；子应用以它拼接 `addons` 等子目录的方式不变。
-- **复制由 frame 统一负责**：打包时把 `resources/` 整体复制进安装包的 `resources/`，其中 `packages/*.asax` 改名为 `.asar`；
-  自身的包也落到 `resources/packages/`。若 `resources/packages/` 中已有与自身包同名的文件，构建报错。项目不再在构建配置里写 `extraResources`。
+- **复制由 frame 统一负责**：打包时先把安装包 `resources/` 的内容整理到 `dist/resources/`，再整体复制进安装包：
+  项目 `resources/` 整体复制（版本管理占位与系统生成的文件除外），其中 `packages/*.asax` 改名为 `.asar`，自身的包也放入 `packages/`；
+  落盘名冲突（与自身包同名、同一个包同时有 `.asax` 与 `.asar`）时构建报错。项目不再在构建配置里写 `extraResources`。
 - `build/icon.png` 是 frame 生成安装包图标的构建输入，留在 `build/`，不属于运行时资源。
 - `.gitignore`：`resources/packages/*` 忽略（保留 `.gitkeep`），`addons`、`icons` 入库。
 

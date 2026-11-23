@@ -67,6 +67,7 @@
 | F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
 | F15 | P1 | 待确认（2026-11-22 新发现并已逐字段核对，F7 子清单之后处理） | frame 对 electron-builder 的预设很薄（产物布局、`productName` / `copyright` / `artifactName`、图标 / `nsis.include` / `deb.fpm` 回填、龙芯镜像），两个项目各写近乎全量的配置且约九成相同 | 核对依据：frame 回填逻辑与 electron-builder 24.13.3 源码。① 写了但不需要（删除后产物不变）：`asar: true`（默认开启）、`linux.vendor`（默认取 maintainer）、`linux.executableName`（默认 name 转小写，两项目 name 已是小写）、`deb.priority: optional`（默认值）、`nsis.allowElevation: true`（默认开启）、`nsis.shortcutName: ${productName}`（默认 sanitizedProductName，结果相同）、`win.publisherName`（只用于 electron-updater 发布信息，未使用）；问卷另有 `deb.fpm`、`nsis.include`（frame 会回填）。② 疑似错误：两项目 `mac.identity: APP_ID`（identity 是 macOS 签名证书名，不是 appId；macOS 本期不验证）。③ 适合收进 frame 预设：`linux.maintainer = author`（deb 必填，author 为字符串无 email 时不写即报 authorEmailIsMissed）、`linux.executableName = name`（与安装脚本模板的 `APP_NAME` 保持一致，防止 name 含大写时被转小写而对不上，关联 F7-S8）。④ 两边相同但属业务取舍、逐项由用户定：`win.requestedExecutionLevel`、nsis 的 `oneClick` / `allowToChangeInstallationDirectory` / `perMachine` / `deleteAppDataOnUninstall` / `language` / `uninstallDisplayName`、`dmg.title`、`linux.category`、`artifactName` 的环境标识映射（prod → release）。⑤ 留在业务：`appId`、`nsis.guid`、`deb.packageName`（发布后不能改）、`copyright`、`win.legalTrademarks`、`nsis.runAfterFinish`、签名配置（《证书文件契约》规定由业务配置）、`linux.executableArgs`（F7-S5 决定留在项目中） | 改前改后合并配置与产物对比（Windows 本机）；Linux deb 的 maintainer / 可执行文件名由 `dpkg-deb -f` / 安装后检查 |
+| F16 | P2 | 已完成（2026-11-23，frame 本次提交） | 安装包 `resources/` 由 frame 生成多条 electron-builder 规则拼出（整体复制排除 `packages/`、每个内置包一条改名规则、自身包一条），结果要把规则拼起来才知道，另有过滤与冲突登记两段专门逻辑 | 用户决定：`pack` 先由 `stageResources()` 把安装包 `resources/` 整理到 `dist/resources/`（项目 `resources/` 整体复制、跳过 `.gitkeep` / `.gitignore` / `.DS_Store` / `Thumbs.db` / `desktop.ini`；`packages/` 中 `.asax` 改名为 `.asar`；放入自身包；目标已存在即报落盘名冲突），再交给 electron-builder 一条 `{ from: 'dist/resources', to: '.' }`。本地调试读项目 `resources/`，不受影响 | 单测 + e2e；整合 Windows `pack --dir` 实测：`win-unpacked/resources/` 与 `dist/resources/` 一致，运行时内置目录命中自身包、首页挂载。注意：electron-builder 不复制空目录，只含占位文件的 `addons/` 不再进安装包（原来带着 `.gitkeep` 进包） |
 
 ### 3.1 F7 子清单：bake 功能对照发现的问题
 
@@ -87,7 +88,7 @@
 | F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
 | F7-S4 | toolkit | 已完成（2026-11-22，toolkit `64d401e`） | 页面加载失败（`did-fail-load`）不通知渲染层；复查发现真正的问题是加载失败时日志里什么都没有：`BaseWindow` 不接 `loadURL` 的 reject、没人监听 `did-fail-load`，Electron 22 实测窗口照样 ready-to-show 但白屏，失败只打到 stderr、不触发 unhandledRejection（F7-R1 也接不到）；渲染进程崩溃同样无记录 | 用户决定：不通知页面（失败的正是该页面，bake 页面也没有监听方）；toolkit `BaseWindow.create()` 监听主页面 `did-fail-load`（忽略子 frame 与 -3 ERR_ABORTED）与 `render-process-gone` 写 ERROR 日志，`loadURL` 加 catch；两个项目不用改。实测：Electron 22 加载缺失文件与强制崩溃渲染进程，日志文件各记一条；问卷 `dev:app` 正常启动无误报 |
 | F7-S5 | 接入层 | 不改（2026-11-22 用户决定），文档已补（frame `655ddc5`、问卷 `ee674197`、整合 `0d4909f`） | `no-sandbox`：bake 在主进程 `appendSwitch`，两个项目只在 builder 配置写 `linux.executableArgs`（问卷迁移时删掉了原有的 `appendSwitch`） | 查明：`executableArgs` 只写进 `.desktop` 的 `Exec=`（electron-builder 24.13.3 `LinuxTargetHelper.js`），桌面图标 / 应用菜单启动带参数，终端 `/usr/bin/<name>` 不带；root 检查早于主进程 JS，`appendSwitch` 很可能来不及生效（按 Chromium 启动顺序判断，未实测）。用户决定不支持终端以 root 启动：frame README 新增「Linux 启动与沙箱」，两个项目 `executableArgs` 注释写明原因与生效范围；不收进 frame（留在项目配置中直观可见）。真机验证见 §5 Linux 补充项 |
-| F7-S6 | toolkit / 接入层 | 部分完成（2026-11-22：①② 完成，toolkit `a1f6bb3`、问卷 `dc2dac84`、整合 `c50bbc4`；③④ 待确认） | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有（问卷迁移 `12f8ca8c` 时删掉了原有的 DevTools 热键、F11 拦截、窗口图标、浏览器打开链接） | ① 新发现：两个宿主都没去掉 Electron 默认菜单，无边框窗口里 `Ctrl+R` 刷新、`Ctrl+Shift+I` 开 DevTools、`F11` 全屏照样生效（Electron 22 对照实测：去掉菜单后同样的按键送达但不再生效）。② DevTools 热键不一致，toolkit `libs/shortcut` 已有实现但无人使用且加载即挂 will-quit。用户决定：toolkit 提供 `removeDefaultMenu()`（Windows / Linux 设 null，macOS 保留应用与编辑菜单）与 `registerDevToolsShortcut()`（默认 `Command+Control+Alt+F5`，停靠底部，只注销自己的热键，加载无副作用）；两个宿主在创建窗口前调用；整合删除自己的 DevTools 热键与 F11 拦截，退出热键保留（属 F7-R2）。实测：`Command` 在 Windows 上是 Win 键（按 Ctrl+Alt+F5 不触发，Win+Ctrl+Alt+F5 触发）；去掉菜单后输入框复制粘贴正常、Ctrl+R 不再刷新；两个项目 `dev:app` 经主进程调试端口确认菜单为 null、热键已注册。③ Linux 窗口图标：整合代码找 `resources/icons/512x512.png` 不存在，实际不起作用；问卷没有。④ 用浏览器打开链接：整合有能力且启动页在用，问卷页面无调用方 |
+| F7-S6 | toolkit / 接入层 | 部分完成（2026-11-22：①② 完成，toolkit `a1f6bb3`、问卷 `dc2dac84`、整合 `c50bbc4`；③④ 待确认） | 两个宿主接入不一致：DevTools 热键、F11 拦截、Linux 窗口图标、用浏览器打开链接，整合有、问卷没有（问卷迁移 `12f8ca8c` 时删掉了原有的 DevTools 热键、F11 拦截、窗口图标、浏览器打开链接） | ① 新发现：两个宿主都没去掉 Electron 默认菜单，无边框窗口里 `Ctrl+R` 刷新、`Ctrl+Shift+I` 开 DevTools、`F11` 全屏照样生效（Electron 22 对照实测：去掉菜单后同样的按键送达但不再生效）。② DevTools 热键不一致，toolkit `libs/shortcut` 已有实现但无人使用且加载即挂 will-quit。用户决定：toolkit 提供 `removeDefaultMenu()`（Windows / Linux 设 null，macOS 保留应用与编辑菜单）与 `registerDevToolsShortcut()`（默认 `Command+Control+Alt+F5`，停靠底部，只注销自己的热键，加载无副作用）；两个宿主在创建窗口前调用；整合删除自己的 DevTools 热键与 F11 拦截，退出热键保留（属 F7-R2）。实测：`Command` 在 Windows 上是 Win 键（按 Ctrl+Alt+F5 不触发，Win+Ctrl+Alt+F5 触发）；去掉菜单后输入框复制粘贴正常、Ctrl+R 不再刷新；两个项目 `dev:app` 经主进程调试端口确认菜单为 null、热键已注册。③ Linux 窗口图标：整合读 `resources/icons/512x512.png`（`8b5db00` 起已在项目 `resources/icons/` 中，随 `resources/` 进安装包），是起作用的（2026-11-23 更正，原记「不存在、不起作用」有误）；问卷没有。④ 用浏览器打开链接：整合有能力且启动页在用，问卷页面无调用方 |
 | F7-S7 | frame | 存疑 | 第三方库不单独拆 vendor 文件（bake 有） | 客户端影响很小 |
 | F7-S8 | frame | 存疑 | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | bake 待办未完成 |
 | F7-T1 | frame | 待确认 | 可视化打包（bake 待办，未完成） | — |
@@ -160,11 +161,16 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 2. ~~F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置~~：frame 内置并加检查（2026-11-21）。
 3. ~~问卷 `docs/base-client/已知问题.md` 的既有更新提交（`39fcdf98`）保留还是撤销~~：已关闭，保留（2026-11-21）。
 
-## 8. 进度记录（最近一次：2026-11-22）
+## 8. 进度记录（最近一次：2026-11-23）
 
 > 只记录「做到哪了、下一步做什么」，条目状态以上面各表为准。下次开始时先读本节。
 
-### 8.0 2026-11-22
+### 8.0 2026-11-23
+
+- F7-S6 ③ 讨论：更正「整合图标文件不存在」（实际存在且起作用）；frame 的 `build/icon.png` → `dist/icons/` 多尺寸只用于打包配置（win / mac / linux 的 `icon`），不进安装包。③ 待用户选：1 整合清理多余图标、问卷补齐 / 2 只清理整合 / 3 都不动 / 4 其他。
+- 讨论中由 `resources/packages/` 的复制规则引出 F16（安装包 `resources/` 先整理到 `dist/resources/` 再整体复制），用户确认后完成，详见 §3 F16。
+
+### 8.0.1 2026-11-22
 
 - 测试后台仍不通，F6、P9 继续待验证。
 - 确定 Linux / 龙芯的验证方式：代码在本机写，各平台分支用单测覆盖，关键步骤写日志；
@@ -181,7 +187,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 - 四个仓库均已提交、未推送（toolkit `0f39c26`、frame `655ddc5`、问卷 `dc2dac84`、整合 `c50bbc4`）；frame 的未跟踪目录 `docs/plans/` 早于本次工作，未动。
 - 用户定的顺序：先逐条确认、修复 F7 子清单 → 再做 F15 → 其余见 §8.4。
-- **待用户回复的提案：F7-S6 ③ Linux 窗口图标**（已发，未选）。要点：electron-builder 的 `.desktop` 用 `StartupWMClass: productName` 关联窗口，源码注释写明不支持 unicode，中文 productName 时桌面环境多半对不上图标；整合 `libs/icon.js` 找的 `resources/icons/512x512.png` 不存在、实际不起作用，问卷迁移时删掉了。方案：frame `pack` 把生成的 512 PNG 复制为安装包 `resources/window-icon.png`（文件名作为两包约定集中定义并单测断言）；toolkit `BaseWindow` 在 Linux 且文件存在时默认设 `icon`（项目写了以项目为准）；整合删 `libs/icon.js` 与两处 `icon: getIconPath()`。选项：1 按方案 / 2 只修整合 / 3 不改等真机确认 / 4 其他。
+- **待用户回复的提案：F7-S6 ③ Linux 窗口图标**（已发，未选；2026-11-23 已被新的讨论取代，见上方 §8.0）。要点：electron-builder 的 `.desktop` 用 `StartupWMClass: productName` 关联窗口，源码注释写明不支持 unicode，中文 productName 时桌面环境多半对不上图标；整合 `libs/icon.js` 找的 `resources/icons/512x512.png` 不存在、实际不起作用，问卷迁移时删掉了。方案：frame `pack` 把生成的 512 PNG 复制为安装包 `resources/window-icon.png`（文件名作为两包约定集中定义并单测断言）；toolkit `BaseWindow` 在 Linux 且文件存在时默认设 `icon`（项目写了以项目为准）；整合删 `libs/icon.js` 与两处 `icon: getIconPath()`。选项：1 按方案 / 2 只修整合 / 3 不改等真机确认 / 4 其他。
 - 之后依次：F7-S6 ④（用浏览器打开链接：整合有 `window.openExternal` 且启动页在用，问卷页面无调用方）→ F7-S7 → F7-S8 → F7-T1–T4 → F15。
 - 本日实测手法（Windows 本机）：模拟按键用 PowerShell `Add-Type` 调 `user32 keybd_event`（SendKeys 常丢焦点）；由主进程等按键脚本写出标记文件后再检查，不用固定计时；`dev:app --inspect <port>` 后经 CDP `Runtime.evaluate` + `process.mainModule.require('electron')` 检查主进程状态。
 
@@ -224,7 +230,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-S6 | 接入层 | ①② 已完成；剩 ③ Linux 窗口图标（整合的实现实际不起作用）、④ 用浏览器打开链接 |
+| F7-S6 | 接入层 | ①② 已完成；剩 ③ Linux 窗口图标（整合已起作用、问卷没有；整合 `resources/icons/` 15 个文件运行时只用 512）、④ 用浏览器打开链接 |
 | F7-S7 | frame | 第三方库不单独拆 vendor 文件，客户端影响很小 |
 | F7-S8 | frame | `package.json` 的 name 支持什么格式没有结论，frame 不校验 |
 | F7-T1 | frame | 可视化打包（bake 待办） |
