@@ -6,6 +6,7 @@ let _vi = null;
 let MockBrowserWindow = null;
 const state = { instances: [], nextId: 1, callLog: [], loadResult: () => Promise.resolve() };
 let loggerMock = null;
+let shellMock = null;
 
 function buildMockClass() {
     const log = state.callLog;
@@ -31,6 +32,11 @@ function buildMockClass() {
                     const handlers = webContentsListeners.get(event) || [];
                     for (const h of handlers) h(...args);
                 },
+                /** 最后一次 setWindowOpenHandler 设置的处理函数（与 Electron 一致：后设置的覆盖先设置的） */
+                windowOpenHandler: null,
+                setWindowOpenHandler: _vi.fn(handler => {
+                    this.webContents.windowOpenHandler = handler;
+                }),
             };
 
             this.on = _vi.fn((event, handler) => {
@@ -65,13 +71,14 @@ function installElectronMock(vi) {
     if (!_vi) {
         _vi = vi;
         MockBrowserWindow = buildMockClass();
+        shellMock = { openExternal: vi.fn(() => Promise.resolve()) };
     }
     const electronPath = require.resolve('electron');
     require.cache[electronPath] = {
         id: electronPath,
         filename: electronPath,
         loaded: true,
-        exports: { BrowserWindow: MockBrowserWindow },
+        exports: { BrowserWindow: MockBrowserWindow, shell: shellMock },
         children: [],
         paths: [],
     };
@@ -99,6 +106,10 @@ function reset() {
     if (loggerMock) {
         for (const fn of Object.values(loggerMock)) fn.mockClear();
     }
+    if (shellMock) {
+        shellMock.openExternal.mockReset();
+        shellMock.openExternal.mockImplementation(() => Promise.resolve());
+    }
 }
 
 /** 让之后的 loadURL 返回指定结果（如 reject 模拟加载失败）；reset 后恢复为 resolve */
@@ -107,6 +118,8 @@ function setLoadResult(factory) {
 }
 
 function getLoggerMock() { return loggerMock; }
+
+function getShellMock() { return shellMock; }
 
 function getInstances() { return state.instances; }
 function lastInstance() { return state.instances[state.instances.length - 1]; }
@@ -120,5 +133,6 @@ module.exports = {
     getCallLog,
     setLoadResult,
     getLoggerMock,
+    getShellMock,
     get MockBrowserWindow() { return MockBrowserWindow; },
 };

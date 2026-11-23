@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const merge = require('lodash.merge');
 const Logger = require('../libs/logger');
 const { resolveResource } = require('../libs/resourceRoot');
@@ -41,6 +41,30 @@ function defaultIconOptions() {
         return {};
     }
     return { icon: iconPath };
+}
+
+const HTTP_URL_RE = /^https?:\/\//i;
+
+/**
+ * 页面打开新窗口（`target="_blank"`、`window.open`）时：http(s) 地址用系统浏览器打开，其他地址忽略；
+ * 一律不在客户端里新开窗口（Electron 默认会新开一个不受宿主管理的窗口加载该地址）。
+ *
+ * 子类需要别的处理方式时，在 `onCreated(window)` 里调用 `window.webContents.setWindowOpenHandler()` 覆盖
+ * （Electron 只保留最后一次设置的处理函数）。
+ *
+ * @param {import('electron').BrowserWindow} window
+ */
+function openLinksExternally(window) {
+    window.webContents.setWindowOpenHandler(({ url }) => {
+        if (HTTP_URL_RE.test(url)) {
+            shell.openExternal(url).catch(err => {
+                Logger.error('[窗口] 用系统浏览器打开链接失败', { url, error: err.message });
+            });
+        } else {
+            Logger.warn('[窗口] 忽略非 http(s) 的新窗口地址', { url });
+        }
+        return { action: 'deny' };
+    });
 }
 
 /**
@@ -111,7 +135,7 @@ class BaseWindow {
      * 创建 BrowserWindow 并绑定生命周期。
      *
      * 流程：读子类 options → 深合并默认 → 构造 BrowserWindow → 绑 'closed' →
-     * 触发 onCreated → 绑加载失败 / 渲染进程退出的日志 → loadURL。
+     * 设置新窗口处理（外部链接用系统浏览器打开）→ 触发 onCreated → 绑加载失败 / 渲染进程退出的日志 → loadURL。
      *
      * onCreated 严格早于 loadURL，保证用户绑的早期事件不因 loadURL 已触发而漏掉。
      *
@@ -135,6 +159,8 @@ class BaseWindow {
             this.onClosed();
         });
 
+        // 先于 onCreated：子类在 onCreated 中设置的新窗口处理可以覆盖默认处理
+        openLinksExternally(window);
         this.onCreated(window);
         logLoadFailures(window);
         window.loadURL(this.getPageUrl()).catch(() => {
