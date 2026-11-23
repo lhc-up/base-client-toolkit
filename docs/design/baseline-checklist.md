@@ -48,7 +48,7 @@
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 | K19 | P1 | 不改（2026-11-21 用户决定） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留） | 按框架接入时 `createHost` 一定会 init 两者，不会出现阻塞；只在文档写明何时需要 opt-out（`architecture.md` §2.5），不改代码 | — |
 | K20 | P3 | 待探究（2026-11-23 新增，优化项） | Linux 大版本安装沿用业务项目原实现：龙芯开 xterm 执行 `sudo dpkg -i`，其他发行版 `xdg-open` 交给系统安装器、失败再用 sudo-prompt 静默 `dpkg -i`；成功与否靠 stderr 是否为空判断，用户可见的反馈依赖终端 / 系统安装器 | 调研业界做法：用得最多、各发行版（含 UOS、麒麟、龙芯）普适、思路清晰，且安装过程用户能看到反馈（不能全程后台静默）。候选方向待调研后列出并对比 | 调研结论 + 方案，确认后再改；Linux / 龙芯真机验证 |
-| K21 | P2 | 待确认（2026-11-23 新发现） | `pkg.download` 先写 `UserData/Packages/<uuid>.tmp-<uuid>`，下载中途进程退出（用户退出、崩溃、断电）时临时文件残留；启动时只清理 `.asax` 临时副本，不清理下载残留，会一直累积（每个最大一个完整包） | 待确认后给方案 | F7-R2 实测时在 `Packages/` 发现 2 个残留 |
+| K21 | P2 | 已完成（2026-11-23，toolkit 本次提交） | `pkg.download` 先写 `UserData/Packages/<uuid>.tmp-<uuid>`，下载中途进程退出（用户退出、崩溃、断电）时临时文件残留；启动时只清理 `.asax` 临时副本，不清理下载残留，会一直累积（每个最大一个完整包） | 用户决定（只改包下载，不动 `libs/download` 与资源下载）：临时文件放在下载目录的 `.downloading/` 下（同一磁盘，完成后直接改名），每次运行第一次下载前整个清空，并删除旧版本直接放在下载目录下的 `<uuid>` / `<uuid>.tmp-<uuid>`；选包不认该目录 | 单测；整合打包实测：下载途中强制结束后残留只在 `.downloading/`（13 MB），再次启动第一次下载前被清除 |
 
 ## 3. frame 条目
 
@@ -176,6 +176,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-T1（可视化打包）按用户要求从清单删除。
 - F7-T2 完成：frame 打包默认 npmmirror 镜像，两个项目加 `.npmrc`。
 - F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。
+- K21 完成：包下载的临时文件改放 `Packages/.downloading/`，每次运行第一次下载前清空（含旧格式残留）；只改 `libs/pkg`，资源下载不受影响；打包实测强制中断后残留被下次启动清除。
 - F7-R2 完成：对比整合 develop，退出路径（退出码、时机）一致，develop 主进程无日志，丢日志是新增日志功能未补全；用户决定小改——新增 `libs/exitApp.js`（`await Logger.shutdown()` 后 `app.exit(code)`），页面退出 / 重启、退出热键、所有窗口关闭、打开启动页失败、内置包缺失统一调用。打包实测：页面退出码 1 且最后一条日志落盘；关闭主窗口退出码 1、无残留进程；退出热键未实测（同一函数）。
 - 用户决定：暂缓项 F7-R2、F13、F7-S2 转为正式项，并入 §8.4「二、待处理」。
 - K14 完成：Linux 安装对齐业务项目 develop（龙芯终端恢复标题、提示与 sleep 3；非龙芯交给系统安装器后不退出），以线上验证为准；新增优化项 K20（探究更好的 Linux 安装方式）。
@@ -261,9 +262,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 **二之一、新发现待确认（§2 / §3）**
 
-| # | 问题（简） |
-|---|---|
-| K21 | 子应用包下载中途退出时 `Packages/` 下的 `.tmp-` 临时文件残留，启动不清理，会累积 |
+（无。）
 
 **三、等条件满足的验证与收尾**
 
