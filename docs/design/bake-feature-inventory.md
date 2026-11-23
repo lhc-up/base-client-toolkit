@@ -52,7 +52,6 @@ bake 里的每个功能，现在在 frame、toolkit 或两个项目的接入层�
 | electron 镜像源（npmmirror） | 仓库内没有配置 `ELECTRON_MIRROR`；龙芯镜像由 fr 内置（F8） |
 | 本地服务端口被占用时自动换端口 | fr `run-dev-server.js` 用固定端口（可用 `--port` 覆盖） |
 | 资源加密 | 见 S1、S2 |
-| 云电脑环境下用户会话是否会串 | 没有结论；随机 partition 已去掉，Partitions 增长问题随之消失 |
 
 `待办.md` 中其余已完成或现在已有着落的条目，见第 5、6 节。
 

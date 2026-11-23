@@ -93,7 +93,6 @@
 | F7-S8 | frame | 已完成（2026-11-23，frame 本次提交） | `package.json` 的 name 支持什么格式没有验证结论，frame 不校验（name 用于 Linux 可执行文件名、更新包文件名、包来源键名） | 调研结论：npm 不检查项目自身的 name（npm 10.9.2 实测大写、`@scope/`、空格、中文均可 install / run），约束全部来自下游：Linux 可执行文件名（`sanitizeFileName`，未配 `executableName` 时还转小写）须与安装脚本未加引号的 `APP_NAME` 一致；Windows 安装目录名（productName 非 ASCII 时用 name）；更新包文件名；项目 appId `com.eachina.<name>`（AppUserModelID ≤128 字符、无空格）；name 还是与后台约定的标识，发布后不能改。用户决定：`dev:app` / `pack` / `installer` 启动时检查——小写字母、数字、`. _ -`，字母或数字开头，不以 `.` 结尾，非 Windows 保留名，≤116 字符，不支持作用域；规则与依据写在 frame README「package.json 的 name」与 `src/core/app-name.js`。满足规则时 electron-builder 默认可执行文件名与 name 相同，F15 的「`linux.executableName = name` 收进预设」可不做 |
 | F7-T2 | frame / 接入层 | 已完成（2026-11-23） | electron 镜像源（npmmirror）没有配置（bake 待办，未完成）；龙芯镜像已由 F8 内置。复查：`npm install` 的 electron 安装脚本与打包时 electron-builder 都默认从 GitHub 下载；本机 GitHub 20 s 无响应，空缓存 `pack --dir --arch ia32` 卡在下载 4 分钟被终止；本机能打 ia32 只因缓存里有手动放的 zip | 用户决定：frame 打包预设默认 `electronDownload.mirror = https://npmmirror.com/mirrors/electron/`（龙芯除外；环境变量 `ELECTRON_MIRROR` / `npm_config_electron_mirror` 已指定时不设置；项目配置优先）；两个项目加 `.npmrc` 的 `electron_mirror`（`npm run` / `npx` 会把它传成 `npm_config_electron_mirror`，实测）。空缓存实测：frame 默认、`.npmrc` 两条路径均从 npmmirror 下载，`pack --dir --arch ia32` 74 s 完成；`.npmrc` 下 `npm install electron@22.3.1` 48 s |
 | F7-T3 | frame | 已完成（2026-11-23） | 本地 dev server 端口被占用时不会自动换端口（bake 待办，未完成），现在可用 `--port` 指定。复查：被占用时 webpack-dev-server 在 server error 事件里直接 throw，打出 Node 堆栈退出，不走 frame 报错 | 用户决定：任何情况（`--port`、`bc.config`、默认值、`--pkg-only`）被占用都自动往后找（最多 20 个），在创建编译器前确定，宿主的 devUrl 与实际端口一致；警告写明占用进程与 PID（Windows：netstat 取 PID + PowerShell UTF-8 取进程名，中文名实测正常；Linux / macOS：lsof，无则 ss，未实测），查不到就不提；`--pkg-only` 换端口时提示改宿主 `BC_DEV_PKG_SOURCES`。同时日志颜色：警告正文黄色、去掉图标，错误正文红色。实测：问卷 `--pkg-only` 占 8023 → 8024，描述文件可访问；整合 `dev:app` 占 8066 → 8067，宿主从 8067 加载自身包。已知：检查端口与真正监听之间若被抢占，仍是 webpack-dev-server 的原始报错（极少见，未处理） |
-| F7-T4 | 接入层 | 待确认 | 云电脑环境下用户会话是否会串，没有结论（bake 待办，未完成） | 随机 partition 已去掉；问卷启动时清残留 cookie |
 
 ## 4. 业务侧连带清理（底座修完后执行）
 
@@ -173,7 +172,8 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-S8 完成：客户端命令启动时检查 package.json 的 name（规则与依据见 frame README）。
 - F7-T1（可视化打包）按用户要求从清单删除。
 - F7-T2 完成：frame 打包默认 npmmirror 镜像，两个项目加 `.npmrc`。
-- F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。下一条 F7-T4。
+- F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。
+- F7-T4 按用户要求从清单删除（不是问题）。F7 子清单全部处理完，下一步 F15。
 - 讨论中由 `resources/packages/` 的复制规则引出 F16（安装包 `resources/` 先整理到 `dist/resources/` 再整体复制），用户确认后完成，详见 §3 F16。
 
 ### 8.0.1 2026-11-22
@@ -236,7 +236,6 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 | # | 归属 | 问题（简） |
 |---|---|---|
-| F7-T4 | 接入层 | 云电脑环境下用户会话是否会串，没有结论（bake 待办） |
 
 **二、方案已整理、未动手（§2）**：本机写代码和单测，交付时附测试清单，由用户在测试机上手动测试
 
