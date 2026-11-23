@@ -36,6 +36,10 @@ const DESCRIPTOR_FIELDS = ['name', 'version', 'env', 'main', 'renderer'];
 const PKG_FILE_RE = /\.(asax|asar)$/i;
 const ASAX_RE = /\.asax$/i;
 const URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+/** 下载目录下放下载中文件的子目录：每次运行第一次下载前整个清空，中途退出留下的文件不会累积 */
+const DOWNLOADING_DIR = '.downloading';
+/** 旧版本直接放在下载目录下的临时文件：`<uuid>` 或 `<uuid>.tmp-<uuid>` */
+const LEGACY_TEMP_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i;
 
 /**
  * @param {Object} deps
@@ -62,6 +66,7 @@ function createPkgLib(deps) {
     } = deps;
 
     let copiesCleaned = false;
+    let downloadingCleaned = false;
     /** 源文件 → 本次运行已复制的副本路径 */
     const copied = new Map();
 
@@ -124,6 +129,27 @@ function createPkgLib(deps) {
     /**
      * 删除临时副本目录中的全部旧副本。被其他运行中的实例占用而删不掉的，只记日志。
      */
+    /**
+     * 清理上次运行下载中途退出留下的临时文件：`.downloading/` 整个删除，以及旧版本直接放在下载目录下的临时文件。
+     * 只在本次运行第一次下载前执行，之后的下载可能正在写入，不能再清。删不掉只记日志。
+     *
+     * @param {string} dir 下载目录
+     */
+    function cleanDownloading(dir) {
+        downloadingCleaned = true;
+        const targets = [path.join(dir, DOWNLOADING_DIR)];
+        for (const name of fse.readdirSync(dir)) {
+            if (LEGACY_TEMP_RE.test(name)) targets.push(path.join(dir, name));
+        }
+        for (const target of targets) {
+            try {
+                fse.removeSync(target);
+            } catch (err) {
+                logger.warn(`${PREFIX} 上次下载留下的临时文件未能删除，跳过：${target}`, err.message);
+            }
+        }
+    }
+
     function cleanCopies() {
         copiesCleaned = true;
         const dir = getCopyDir();
@@ -391,8 +417,12 @@ function createPkgLib(deps) {
 
         const dir = getUpdateDir();
         fse.ensureDirSync(dir);
+        if (!downloadingCleaned) cleanDownloading(dir);
+        // 下载中的文件放在下载目录的子目录里：与正式的包同一磁盘，完成后直接改名；中途退出的残留下次运行清掉。
         // 临时文件不带 `.asar` 后缀：写入过程中不能让 Electron 把它当归档目录处理
-        const tempPath = path.join(dir, randomUUID());
+        const stagingDir = path.join(dir, DOWNLOADING_DIR);
+        fse.ensureDirSync(stagingDir);
+        const tempPath = path.join(stagingDir, randomUUID());
         const finalPath = path.join(dir, sourceName.replace(ASAX_RE, '.asar'));
 
         try {

@@ -209,6 +209,9 @@ describe('libs/pkg get：devServer / file', () => {
     });
 });
 
+/** 下载目录中的正式文件（不含下载中的临时目录 .downloading） */
+const listUpdate = dir => fs.readdirSync(dir).filter(name => name !== '.downloading');
+
 describe('libs/pkg download', () => {
     /** 下载底座把描述文件写到临时文件 */
     function downloader(descriptor, calls = []) {
@@ -228,10 +231,10 @@ describe('libs/pkg download', () => {
         });
         const finalPath = path.join(harness.dirs.update, 'demo-prod-v1.2.0.asar');
         expect(pkg).toMatchObject({ name: 'demo', version: '1.2.0', source: PKG_SOURCE.SEMVER, main: path.join(finalPath, 'main/pkg.js') });
-        expect(fs.readdirSync(harness.dirs.update)).toEqual(['demo-prod-v1.2.0.asar']);
+        expect(listUpdate(harness.dirs.update)).toEqual(['demo-prod-v1.2.0.asar']);
         expect(calls[0]).toMatchObject({
             urls: ['https://x/demo-prod-v1.2.0.asax?sig=1'],
-            destinationPath: path.join(harness.dirs.update, 'temp-id'),
+            destinationPath: path.join(harness.dirs.update, '.downloading', 'temp-id'),
             onProgress,
             headers: { 'Cache-Control': 'no-cache' },
         });
@@ -241,7 +244,7 @@ describe('libs/pkg download', () => {
         harness = createHarness({ startDownload: downloader(descriptorOf('demo', '1.1.0')) });
         await expect(harness.lib.download({ url: 'https://x/demo-prod-v1.2.0.asax', name: 'demo', env: 'prod', version: '1.2.0' }))
             .rejects.toThrow(/version=1\.1\.0（预期 1\.2\.0）/);
-        expect(fs.readdirSync(harness.dirs.update)).toEqual([]);
+        expect(listUpdate(harness.dirs.update)).toEqual([]);
     });
 
     it('下载失败时删除临时文件并透传异常', async () => {
@@ -253,7 +256,8 @@ describe('libs/pkg download', () => {
             },
         });
         await expect(harness.lib.download({ url: 'https://x/a.asax', name: 'demo', env: 'prod' })).rejects.toBe(failure);
-        expect(fs.readdirSync(harness.dirs.update)).toEqual([]);
+        expect(listUpdate(harness.dirs.update)).toEqual([]);
+        expect(fs.readdirSync(path.join(harness.dirs.update, '.downloading'))).toEqual([]);
     });
 
     it('给了 integrity 时校验，不符时不落盘', async () => {
@@ -264,7 +268,38 @@ describe('libs/pkg download', () => {
             .resolves.toMatchObject({ version: '1.2.0' });
         await expect(harness.lib.download({ url: 'https://x/b.asax', name: 'demo', env: 'prod', integrity: '0'.repeat(64) }))
             .rejects.toThrow(/完整性校验失败/);
-        expect(fs.readdirSync(harness.dirs.update)).toEqual(['a.asar']);
+        expect(listUpdate(harness.dirs.update)).toEqual(['a.asar']);
+    });
+
+    it('第一次下载前清空 .downloading/ 并删除旧版本留下的临时文件，正式的包保留', async () => {
+        harness = createHarness({ startDownload: downloader(descriptorOf('demo', '1.2.0')) });
+        const { update } = harness.dirs;
+        const uuid = '1c9fd8e3-09d1-4fae-9084-08d0f4831f27';
+        fse.outputFileSync(path.join(update, '.downloading', 'stale'), 'partial');
+        fse.outputFileSync(path.join(update, `${uuid}.tmp-879d1432-4cac-46f3-9a6e-4904d0bc4318`), 'partial');
+        fse.outputFileSync(path.join(update, uuid), 'partial');
+        harness.write(update, 'old-prod-v1.0.0.asar', descriptorOf('old', '1.0.0'));
+        fse.outputFileSync(path.join(update, 'notes.txt'), 'keep');
+
+        await harness.lib.download({ url: 'https://x/demo-prod-v1.2.0.asax', name: 'demo', env: 'prod' });
+
+        expect(listUpdate(update).sort()).toEqual(['demo-prod-v1.2.0.asar', 'notes.txt', 'old-prod-v1.0.0.asar']);
+        expect(fs.readdirSync(path.join(update, '.downloading'))).toEqual([]);
+    });
+
+    it('同一次运行只在第一次下载前清理，之后的下载不再清（可能有下载正在写入）', async () => {
+        harness = createHarness({ startDownload: downloader(descriptorOf('demo', '1.2.0')) });
+        const staging = path.join(harness.dirs.update, '.downloading');
+        await harness.lib.download({ url: 'https://x/a.asax', name: 'demo', env: 'prod' });
+        fse.outputFileSync(path.join(staging, 'in-progress'), 'writing');
+        await harness.lib.download({ url: 'https://x/b.asax', name: 'demo', env: 'prod' });
+        expect(fs.readdirSync(staging)).toEqual(['in-progress']);
+    });
+
+    it('选包时不认下载中的临时目录', async () => {
+        harness = createHarness();
+        fse.outputFileSync(path.join(harness.dirs.update, '.downloading', 'x.asar'), JSON.stringify(descriptorOf('demo', '9.9.9')));
+        await expect(harness.lib.get('demo', { env: 'prod' })).resolves.toBeNull();
     });
 
     it('只接受 .asax / .asar 地址', async () => {
