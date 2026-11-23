@@ -113,6 +113,37 @@ describe('capability/update platform contract', () => {
         expect(calls.some(call => call[0] === 'openPath')).toBe(false);
     });
 
+    it('Linux（非龙芯）交给 xdg-open 后不退出客户端（与业务项目原实现一致）', async () => {
+        const { calls, update } = createHarness('linux');
+        await expect(update.installApp('/tmp/app.deb')).resolves.toEqual({ started: true });
+        expect(calls.some(call => call[0] === 'exit')).toBe(false);
+    });
+
+    it('龙芯用 xterm 终端安装：标题、提示与 sleep 3 同业务项目原实现，路径作为 sh 的 $1 传入；安装结束后退出', async () => {
+        const execFile = vi.fn((_file, _args, callback) => callback(null, '', ''));
+        const { calls, update } = createHarness('linux', {
+            execFile,
+            os: { isLinux: () => true, isLoongnix: () => true, isWindows: () => false, isMacOS: () => false },
+        });
+        const installer = "/tmp/release name';touch owned;.deb";
+        await expect(update.installApp(installer)).resolves.toEqual({ started: true });
+        expect(execFile).toHaveBeenCalledWith(
+            'xterm',
+            ['-T', '安装更新', '-e', 'sh', '-c', 'sudo dpkg -i "$1" && echo 安装完成，3s后退出安装程序\nsleep 3', 'sh', installer],
+            expect.any(Function),
+        );
+        expect(calls).toContainEqual(['exit', 1]);
+    });
+
+    it('Linux 安装启动失败时提示并退出', async () => {
+        const execFile = vi.fn((_file, _args, callback) => callback(new Error('fail'), '', ''));
+        const sudoExec = vi.fn((_cmd, _opts, callback) => callback(new Error('denied')));
+        const { calls, update } = createHarness('linux', { execFile, loadSudoPrompt: () => ({ exec: sudoExec }) });
+        await expect(update.installApp('/tmp/app.deb')).resolves.toEqual({ started: false, reason: 'open-failed' });
+        expect(calls.some(call => call[0] === 'dialog')).toBe(true);
+        expect(calls).toContainEqual(['exit', 1]);
+    });
+
     it('passes Linux installer paths as execFile arguments without shell interpolation', async () => {
         const execFile = vi.fn((_file, _args, callback) => callback(null, '', ''));
         const { update } = createHarness('linux', { execFile });

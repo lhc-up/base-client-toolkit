@@ -34,11 +34,16 @@ function createUpdateCapability(deps) {
         if (actual !== expected) throw new Error('update package integrity check failed');
     }
 
+    /**
+     * 新开 xterm 终端窗口安装，显示安装过程。安装成功后提示，无论成败窗口都停留 3 秒再关闭。
+     * 命令与业务项目原实现一致；安装包路径作为 sh 的参数 $1 传入，不拼进命令字符串。
+     */
     function installByOpenShell(filePath) {
+        const script = 'sudo dpkg -i "$1" && echo 安装完成，3s后退出安装程序\nsleep 3';
         return new Promise(resolve => {
             execFile(
                 'xterm',
-                ['-T', 'Install update', '-e', 'sudo', 'dpkg', '-i', filePath],
+                ['-T', '安装更新', '-e', 'sh', '-c', script, 'sh', filePath],
                 (err, _stdout, stderr) => resolve(!err && !stderr),
             );
         });
@@ -188,7 +193,8 @@ function createUpdateCapability(deps) {
                 await quitApp();
                 return { started: false, reason: 'open-failed' };
             }
-            await quitApp();
+            // 与业务项目原实现一致：龙芯在终端窗口关闭（安装结束）后退出；其他发行版交给系统安装器后不退出
+            if (os.isLoongnix()) await quitApp();
             return { started: true };
         }
         if (os.isWindows() || os.isMacOS()) return openInstaller(filePath);
