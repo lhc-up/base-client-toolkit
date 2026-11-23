@@ -41,12 +41,13 @@
 | K11 | P1 | 已完成（2026-11-19） | `capability/download` 把编排、存储根、renderer 契约焊死，业务主进程无法复用；无「已存在且完整性匹配则跳过」语义 | 编排下沉 `libs/download` 批量入口（`files`、`skipIfValid`、并发、文件级回调）；`capability/download` 退为薄适配层。复查补全（`4ee6db9`）：`startBatch` 取消覆盖全部进行中任务，未开始的记为 cancelled，校验复用 `libs/integrity` | 单测 + 业务侧复用后删掉重写的编排 |
 | K12 | P1 | 已完成（2026-11-19） | `BaseWindow` 不提供 preload 路径默认值，每个项目重写同一段绝对路径 | 与 F5 配对：由 frame 导出产物路径常量，toolkit 不内置默认（保持不依赖 frame 的边界） | 两个项目改用后编译与运行通过 |
 | K13 | P2 | 待确认 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 | `installApp` 增加可配置 dpkg 选项（如 `{ dpkgForce: ['overwrite'] }`），默认关闭；`installByDpkg` 与 `installByOpenShell` 两处都改 | Linux 验证。2026-11-21 补充方案（未确认，等测试机）：三处安装失败都记日志、成功只看退出码；`installApp(filePath, { dpkgForce })` 只允许字母与连字符；待定：设了 dpkgForce 时非龙芯系统是否跳过 xdg-open（xdg-open 打开系统安装器即算成功，dpkg 不会执行，强制覆盖形同虚设） |
-| K14 | P2 | 部分完成（2026-11-23：已对齐业务项目 develop，问题待讨论） | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败。复查（对比两个项目 develop 的 `main/libs/js/ipcMainCommand.js`，两边相同）：第 1 点是迁移丢失；第 2 点 develop 即如此；另有一处迁移改动：非龙芯安装成功后 develop 不退出客户端，toolkit 退出。用户决定先对齐 develop：恢复标题、提示与 `sleep 3`（路径作为 `sh -c` 的 `$1`），非龙芯成功后不退出；stderr 判断保持 develop 原样，问题另议 | 补提示与 `sleep`，经 `sh -c` 执行，安装包路径作为参数（`$1`）传入，不拼进命令字符串；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
+| K14 | P2 | 已完成（2026-11-23，toolkit `38894bd`：已对齐业务项目 develop，该实现已在线上验证；优化方向记入 K20） | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`（xterm 一闪而过）；`!err && !stderr` 把成功时的 stderr 警告判为失败。复查（对比两个项目 develop 的 `main/libs/js/ipcMainCommand.js`，两边相同）：第 1 点是迁移丢失；第 2 点 develop 即如此；另有一处迁移改动：非龙芯安装成功后 develop 不退出客户端，toolkit 退出。用户决定先对齐 develop：恢复标题、提示与 `sleep 3`（路径作为 `sh -c` 的 `$1`），非龙芯成功后不退出；stderr 判断保持 develop 原样（推演的误判场景未在真机出现过，用户决定以线上验证为准，不改） | 补提示与 `sleep`，经 `sh -c` 执行，安装包路径作为参数（`$1`）传入，不拼进命令字符串；失败判定统一只看退出码，stderr 交给 logger | Linux / 龙芯验证 |
 | K15 | P2 | 已并入 §5（2026-11-21） | Linux / 龙芯安装与 dpkg 流程缺少自动化与真机验证记录 | 不单独做，由 §5 验证矩阵的 Linux 行覆盖（含 dpkg 安装步骤与记录模板） | 见 §5 |
 | K17 | P1 | 已完成（2026-11-21） | `os` 的 `linuxArch` / `linuxCore` / `lsbRelease` 注释写返回 string，实际返回带末尾换行的 Buffer，`env.getSystemDesc()` 拼出的描述每段夹着换行；注释示例 `Ubuntu 20.04` 也不对（`lsb_release -i -s` 只有发行版名） | 统一经 `execSync(cmd, { encoding: 'utf8' }).trim()`，失败记日志返回空串；改正 `env` 注释 | 单测（K9 中发现） |
 | K18 | P1 | 已完成（2026-11-21） | `singleInstance` 抢锁失败只调用异步的 `app.quit()`、无返回值，调用方后面的代码在退出前继续执行（问卷：第二实例抢走截屏热键、启动服务发现） | 返回是否拿到锁（boolean），README 写明用法；业务侧改用见 P11 | 单测（K9 中发现） |
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 | K19 | P1 | 不改（2026-11-21 用户决定） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留） | 按框架接入时 `createHost` 一定会 init 两者，不会出现阻塞；只在文档写明何时需要 opt-out（`architecture.md` §2.5），不改代码 | — |
+| K20 | P3 | 待探究（2026-11-23 新增，优化项） | Linux 大版本安装沿用业务项目原实现：龙芯开 xterm 执行 `sudo dpkg -i`，其他发行版 `xdg-open` 交给系统安装器、失败再用 sudo-prompt 静默 `dpkg -i`；成功与否靠 stderr 是否为空判断，用户可见的反馈依赖终端 / 系统安装器 | 调研业界做法：用得最多、各发行版（含 UOS、麒麟、龙芯）普适、思路清晰，且安装过程用户能看到反馈（不能全程后台静默）。候选方向待调研后列出并对比 | 调研结论 + 方案，确认后再改；Linux / 龙芯真机验证 |
 
 ## 3. frame 条目
 
@@ -174,6 +175,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-T1（可视化打包）按用户要求从清单删除。
 - F7-T2 完成：frame 打包默认 npmmirror 镜像，两个项目加 `.npmrc`。
 - F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。
+- K14 完成：Linux 安装对齐业务项目 develop（龙芯终端恢复标题、提示与 sleep 3；非龙芯交给系统安装器后不退出），以线上验证为准；新增优化项 K20（探究更好的 Linux 安装方式）。
 - P9 验证完成：问卷 Windows `pack --dir --env test`，用户用测试账号登录并进入两份带资源的试卷（两轮）。作答页资源缓存走通：图片、mp4（1 MB）、mp3（6.1 MB）均「缓存完成」，再次进入「命中缓存」；离开试卷时进行中的下载「缓存已取消」（`stop()` 正常路径）。Electron 22 另行复现取消：toolkit 删除临时文件成功、无残留（中途看到的 `.mp3.tmp-*` 是第二轮下载进行中的临时文件）。停顿 60 秒中止的路径仍由单测与 11-21 登录页资源包实测覆盖。
 - F6 验证完成：两个项目 Windows `pack --dir` 打包运行，经调试端口开启网络监听后刷新页面——整合首页 3 个样式表、6 张图片，问卷登录页 3 个样式表、3 张图片、1 个字体，全部加载成功、无失败请求，截图显示正常。整合首页随后提示「数据加载失败」，原因是测试后台的问卷子应用包缺 `env`（记入收尾·后台改造），与 F6 无关。
 - F7-T4 按用户要求从清单删除（不是问题）。F7 子清单全部处理完，下一步 F15。
@@ -250,7 +252,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 | # | 问题（简） |
 |---|---|
 | K13 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 |
-| K14 | Linux 安装两处偏差：`installByOpenShell` 丢了「安装完成」提示与 `sleep 3`；`!err && !stderr` 把成功时的 stderr 警告判为失败 |
+| K20 | 探究 Linux 上更好的安装方式（业界常用、普适、用户能看到反馈），优化项 |
 
 **二之一、新发现待确认（§3）**
 
