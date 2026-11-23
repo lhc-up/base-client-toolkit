@@ -48,6 +48,7 @@
 | K16 | P0 | 已完成（2026-11-20） | 包操作分散在 `pkgSource` 与 update 能力：返回结构不统一、入口要调用方自己拼、下载后只返回路径，调用方只能再找一遍 | 新增 `main/libs/pkg`（`get` / `download` / `removeOtherVersions` / `parseDevSources`），包信息统一为 `{ name, version, env, source, main, renderer, update? }`；devServer 只配 `url`、读 dev server 上的描述文件；`shared` 导出 `PKG_SOURCE`；删除 `pkgSource`，update 能力只保留安装包（含删除 `getUpdatePkgList` / `getNewestPkg` / `stageLocalPkg` 与下载的整体超时 race）。设计见 `pkg-source.md` | 单测；两个项目打包运行与本地调试实测 |
 | K19 | P1 | 不改（2026-11-21 用户决定） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留） | 按框架接入时 `createHost` 一定会 init 两者，不会出现阻塞；只在文档写明何时需要 opt-out（`architecture.md` §2.5），不改代码 | — |
 | K20 | P3 | 待探究（2026-11-23 新增，优化项） | Linux 大版本安装沿用业务项目原实现：龙芯开 xterm 执行 `sudo dpkg -i`，其他发行版 `xdg-open` 交给系统安装器、失败再用 sudo-prompt 静默 `dpkg -i`；成功与否靠 stderr 是否为空判断，用户可见的反馈依赖终端 / 系统安装器 | 调研业界做法：用得最多、各发行版（含 UOS、麒麟、龙芯）普适、思路清晰，且安装过程用户能看到反馈（不能全程后台静默）。候选方向待调研后列出并对比 | 调研结论 + 方案，确认后再改；Linux / 龙芯真机验证 |
+| K21 | P2 | 待确认（2026-11-23 新发现） | `pkg.download` 先写 `UserData/Packages/<uuid>.tmp-<uuid>`，下载中途进程退出（用户退出、崩溃、断电）时临时文件残留；启动时只清理 `.asax` 临时副本，不清理下载残留，会一直累积（每个最大一个完整包） | 待确认后给方案 | F7-R2 实测时在 `Packages/` 发现 2 个残留 |
 
 ## 3. frame 条目
 
@@ -255,7 +256,6 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 |---|---|
 | K13 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 |
 | K20 | 探究 Linux 上更好的安装方式（业界常用、普适、用户能看到反馈），优化项 |
-| K21 | P2 | 待确认（2026-11-23 新发现） | `pkg.download` 先写 `UserData/Packages/<uuid>.tmp-<uuid>`，下载中途进程退出（用户退出、崩溃、断电）时临时文件残留；启动时只清理 `.asax` 临时副本，不清理下载残留，会一直累积（每个最大一个完整包） | 待确认后给方案 | F7-R2 实测时在 `Packages/` 发现 2 个残留 |
 | F13 | 龙芯打包依赖龙芯 npm 源与 Electron 镜像，源一挂就无法打包 |
 | F7-S2 | 加密范围（bake 全部文件 / frame 只加密 `.js`），与 F7-S1 加密暂不支持相关 |
 
