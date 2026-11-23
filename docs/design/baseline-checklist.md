@@ -65,7 +65,7 @@
 | F10 | P0 | 已完成（2026-11-20） | 构建 Node 版本无运行时检查（`engines` 只是声明）；主进程代码在 Electron 22 内置 Node 16.17 上的兼容性无保障 | 命令入口按 `engines` 检查构建 Node 版本；两个项目加 `.nvmrc`；整合客户端主进程与 frame `paths.js` 按 Node 16.17 做 lint | frame `e2dcdb2`，整合 `c7bd6c6`，问卷 `3ed5d7f5` |
 | F11 | P2 | 已完成（2026-11-21，frame `b252bbb`） | frame 无 `.gitattributes`，Windows（`core.autocrlf=true`）检出后 `bin/base-client.js` 首行为 `node\r`，从这份工作区发布或 yalc 推包后 Linux / mac 报 `/usr/bin/env: 'node\r'` 无法执行（本机全新克隆 + `npm pack` 实测复现）。shell 模板生成时已转 LF，不受影响；toolkit 无可执行脚本 | 新增 `.gitattributes`（`bin/**`、`*.sh` 固定 LF）；单测断言 bin 首行不含回车；frame 补 `prepublishOnly: npm test`（原来没有） | 修复后全新克隆与 `npm pack` 产物首行均为 LF；CRLF 时单测失败 |
 | F12 | P1 | 不改（2026-11-21 用户决定） | Linux x64 安装包文件名的架构段是 `amd64`（如 `专项数据采集系统_linux_amd64_release_v2.7.2.deb`），与 `--arch x64` 及 Windows / mac 的 `x64` 不一致，很多人不认识 amd64。原因：electron-builder 的 `getArtifactArchName` 对 deb 把 x64 映射为 Debian 架构名；包内 `Architecture` 字段由另一个函数 `toLinuxArchString` 决定，与文件名无关 | frame 合并配置后，Linux 且 x64 时把 artifactName 中的 `${arch}` 换成 `x64` 写入 `deb.artifactName`（优先级高于顶层），项目配置不动；包内 Architecture 仍为 amd64。已排查：toolkit 安装只校验扩展名 `.deb`，两个项目下载安装包后用随机名落盘，仓库内无按原文件名查找 / 上传的代码；问卷 `技术约定.md` 需同步。待确认：是否顺带把龙芯 `loongarch64` 统一为 `loong64`；仓库外上传 / 归档流程是否依赖原文件名 | frame 单测（linux x64 → x64，arm64 / loong64 / win / mac 不变）；打 deb 后 `dpkg-deb -f` 确认 Architecture 为 amd64。结论：保持 electron-builder 默认命名，x64 为 `amd64`、龙芯为 `loongarch64`，与 deb 包内 Architecture 字段一致 |
-| F13 | P1 | 待确认（先记录，暂不做） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
+| F13 | P1 | 待确认（2026-11-23 用户决定由暂缓转为正式项） | 龙芯打包依赖龙芯的外部服务：electron-builder / builder-util 要从龙芯 npm 源（`https://registry.loongnix.cn:4873`）安装，Electron 从龙芯镜像（`http://ftp.loongnix.cn/electron/LoongArch/`）下载。源一挂就无法打包（2026-11-21 龙芯 npm 源已无法访问），版本也不受我们控制；且每次打包都要手动换官方 / 龙芯版 electron-builder 并改动 `package.json` 与锁文件（原 F14） | 方向（待定）：固定版本的龙芯 Electron 放到自有仓库 / 制品库，frame 预设指向自有镜像；龙芯版 electron-builder 或 builder-util 自己打包发布到自有 npm 仓库或 GitHub，frame 的检查与报错步骤改为从自有源安装 | 断开龙芯源后能完成 loong64 打包 |
 | F14 | P1 | 已并入 F13（2026-11-21） | 龙芯打包仍要手动把官方 electron-builder 换成龙芯版、打完再换回 | 根本解法与 F13 相同（自有发布龙芯版 builder-util + npm overrides），一并处理 | 见 F13 |
 | F15 | P1 | 已完成（2026-11-23：① 多余 9 项已删除；② `mac.identity` 改为 `null`；③ `linux.maintainer` 收进 frame 预设；④ `requestedExecutionLevel`、nsis 6 项、`dmg.title`、`linux.category` 收进 frame 预设，`artifactName` 去掉环境名映射；⑤ 留在项目） | frame 对 electron-builder 的预设很薄（产物布局、`productName` / `copyright` / `artifactName`、图标 / `nsis.include` / `deb.fpm` 回填、龙芯镜像），两个项目各写近乎全量的配置且约九成相同 | 核对依据：frame 回填逻辑与 electron-builder 24.13.3 源码。① 写了但不需要（删除后产物不变）：`asar: true`（默认开启）、`linux.vendor`（默认取 maintainer）、`linux.executableName`（默认 name 转小写，两项目 name 已是小写）、`deb.priority: optional`（默认值）、`nsis.allowElevation: true`（默认开启）、`nsis.shortcutName: ${productName}`（默认 sanitizedProductName，结果相同）、`win.publisherName`（只用于 electron-updater 发布信息，未使用）；问卷另有 `deb.fpm`、`nsis.include`（frame 会回填）。② 疑似错误：两项目 `mac.identity: APP_ID`（identity 是 macOS 签名证书名，不是 appId；macOS 本期不验证）。③ 适合收进 frame 预设：`linux.maintainer = author`（deb 必填，author 为字符串无 email 时不写即报 authorEmailIsMissed）、`linux.executableName = name`（与安装脚本模板的 `APP_NAME` 保持一致，防止 name 含大写时被转小写而对不上，关联 F7-S8）。④ 两边相同但属业务取舍、逐项由用户定：`win.requestedExecutionLevel`、nsis 的 `oneClick` / `allowToChangeInstallationDirectory` / `perMachine` / `deleteAppDataOnUninstall` / `language` / `uninstallDisplayName`、`dmg.title`、`linux.category`、`artifactName` 的环境标识映射（prod → release）。⑤ 留在业务：`appId`、`nsis.guid`、`deb.packageName`（发布后不能改）、`copyright`、`win.legalTrademarks`、`nsis.runAfterFinish`、签名配置（《证书文件契约》规定由业务配置）、`linux.executableArgs`（F7-S5 决定留在项目中） | 改前改后合并配置与产物对比（Windows 本机）；Linux deb 的 maintainer / 可执行文件名由 `dpkg-deb -f` / 安装后检查 |
 | F16 | P2 | 已完成（2026-11-23，frame 本次提交） | 安装包 `resources/` 由 frame 生成多条 electron-builder 规则拼出（整体复制排除 `packages/`、每个内置包一条改名规则、自身包一条），结果要把规则拼起来才知道，另有过滤与冲突登记两段专门逻辑 | 用户决定：`pack` 先由 `stageResources()` 把安装包 `resources/` 整理到 `dist/resources/`（项目 `resources/` 整体复制、跳过 `.gitkeep` / `.gitignore` / `.DS_Store` / `Thumbs.db` / `desktop.ini`；`packages/` 中 `.asax` 改名为 `.asar`；放入自身包；目标已存在即报落盘名冲突），再交给 electron-builder 一条 `{ from: 'dist/resources', to: '.' }`。本地调试读项目 `resources/`，不受影响 | 单测 + e2e；整合 Windows `pack --dir` 实测：`win-unpacked/resources/` 与 `dist/resources/` 一致，运行时内置目录命中自身包、首页挂载。注意：electron-builder 不复制空目录，只含占位文件的 `addons/` 不再进安装包（原来带着 `.gitkeep` 进包）；用户决定保留这一默认行为（2026-11-23） |
@@ -78,14 +78,14 @@
 | # | 归属 | 状态 | 问题 | 备注 |
 |---|---|---|---|---|
 | F7-R1 | 接入层（两个宿主） | 已完成（2026-11-21，问卷 `d515b706`，整合 `9d4b56b`） | 主进程未捕获的异常与 Promise 拒绝不写日志 | 用户决定不放 toolkit（全局监听会改变进程行为，属宿主决策）；两个宿主入口各自监听并记日志，不测默认行为 |
-| F7-R2 | 接入层（整合） | 暂缓（用户决定先不修） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
+| F7-R2 | 接入层（整合） | 待确认（2026-11-23 用户决定由暂缓转为正式项） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
 | F7-R3 | toolkit / 接入层（两个宿主） | 已完成（2026-11-22，toolkit / 问卷 / 整合见 §8.0） | 「打开系统时间设置」只支持 Windows；复查发现打不开时两个页面都可能不提示（问卷非 Windows 点击无反应，整合 Windows 打开失败无提示）；两个宿主各写一份 | 用户决定：收进 toolkit `libs/os` 的 `openDateTimeSettings()`，**仅支持 Windows**，其他平台返回 `{ opened: false, reason: 'unsupported-platform' }`，启动失败返回 `reason: 'open-failed'`，不抛异常；Windows 改为进程启动即返回（实测 rundll32 在对话框关闭前不退出，原写法调用一直挂着）。两个宿主删除自己的实现；页面 `opened` 为 false 时弹窗（`$Modal.warning`）提示手动修改。Windows 两个项目打包实测通过；Linux / macOS 打开面板不做 |
 | F7-B1 | frame | 已完成（2026-11-22，frame `4949223`） | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 用户决定：新增可选参数 `--inspect [port]`，不传时行为不变；默认端口 9229（与 Node 一致，VS Code 附加、`chrome://inspect` 无需配置），同时加 `--trace-warnings`；不加 bake 的 `--unhandled-rejections=strict`（开发与打包行为会不一致，F7-R1 已记日志）；端口非 1–65535 整数报错退出；`--pkg-only` 时提示不起作用。调试端口与 dev server 端口 8023 提为常量。问卷实测：9229 可连接并在主进程执行语句，不传参数不占端口，关闭 Electron 后 `dev:app` 正常退出 |
 | F7-B2 | frame | 不改（2026-11-22 用户决定） | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 用户不要关闭后询问重启的交互；保持关闭 Electron 即停止 dev server 并退出 |
 | F7-B3 | frame | 不改（2026-11-22 用户决定） | 生产构建不删除 console 输出（bake 有 `drop_console`） | 保持 terser 默认。依据：两个项目 main / preload 无 console 调用，toolkit 不打进 bundle；renderer 的 console 体积可忽略；客户端日志经主进程 logger 落盘，不依赖 console；问卷 web 端 logger 的 warn / error 就是 console，全删会看不到 web 端错误 |
 | F7-B4 | frame | 已完成（2026-11-22，frame `583ee2b`） | 没有循环依赖检测（bake 有 CircularDependencyPlugin） | 用户决定：frame 自带检测（不引入 `circular-dependency-plugin`），main / preload / renderer / web 都加；只查项目代码（排除 `node_modules`），`import`、`require` 及混用都算，`import()` 不算，CommonJS 指向自身的连接不算；强连通分量一次找出，每组报一条最短路径（注明组内文件数）；默认警告并打印路径，`bc.config` `circularDependency: 'error'` 构建失败、`false` 关闭。实测：两个项目当前 0 个循环（改前用临时脚本、改后用插件各测一次）；问卷临时加 a ↔ b 循环，警告与报错两种模式输出符合预期 |
 | F7-S1 | frame / toolkit | 已完成（2026-11-22，frame `2af0b11`） | 产物加密只有构建期，没有运行时解密（frame 文档写明由业务实现，toolkit 与两个项目都没有）；复查还发现 `app/preload/` 也会被加密（Electron 直接读，拦截协议也解不了），且默认就开启（不写 `encrypt` 时 `pack` 要求 key） | 用户决定：暂不支持加密。不写 `encrypt` 或写 `false` 为不加密，写了其他值打包前直接报错（不清 dist）；加密实现保留（`parseEncryptConfig` / `encryptRenderer` 与单测），文档写明暂不支持；两个项目的 `encrypt: false` 保留不动。问卷实测：写 encrypt 报错且 dist 保留、不写 encrypt 正常打包（描述文件 `encrypted: false`）、原配置正常 |
-| F7-S2 | frame | 搁置（2026-11-22，随 F7-S1） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
+| F7-S2 | frame | 待确认（2026-11-23 用户决定由搁置转为正式项；与 F7-S1 加密暂不支持相关） | 加密范围变窄：bake 加密 renderer / update 下全部文件，frame 只加密 `.js` | 加密暂不支持，范围等恢复加密时与运行时解密、排除 preload 一起设计 |
 | F7-S3 | toolkit / 接入层 | 不改（2026-11-22 用户决定） | 键盘锁定（bake 的 `block-keyboard` 原生插件）现在没有；整合 `resources/addons/` 为空，问卷没有 `resources/` | 不补。依据：bake 页面与两个项目的代码、文档都没有调用方；问卷作答监管用置顶、内容保护、截屏热键检测，不依赖锁键盘；插件只有 win32-x64 / win32-ia32 / linux-arm64 三个编译产物、没有源码，覆盖不了 Linux x64 与龙芯。业务以后需要时作为新需求单独设计 |
 | F7-S4 | toolkit | 已完成（2026-11-22，toolkit `64d401e`） | 页面加载失败（`did-fail-load`）不通知渲染层；复查发现真正的问题是加载失败时日志里什么都没有：`BaseWindow` 不接 `loadURL` 的 reject、没人监听 `did-fail-load`，Electron 22 实测窗口照样 ready-to-show 但白屏，失败只打到 stderr、不触发 unhandledRejection（F7-R1 也接不到）；渲染进程崩溃同样无记录 | 用户决定：不通知页面（失败的正是该页面，bake 页面也没有监听方）；toolkit `BaseWindow.create()` 监听主页面 `did-fail-load`（忽略子 frame 与 -3 ERR_ABORTED）与 `render-process-gone` 写 ERROR 日志，`loadURL` 加 catch；两个项目不用改。实测：Electron 22 加载缺失文件与强制崩溃渲染进程，日志文件各记一条；问卷 `dev:app` 正常启动无误报 |
 | F7-S5 | 接入层 | 不改（2026-11-22 用户决定），文档已补（frame `655ddc5`、问卷 `ee674197`、整合 `0d4909f`） | `no-sandbox`：bake 在主进程 `appendSwitch`，两个项目只在 builder 配置写 `linux.executableArgs`（问卷迁移时删掉了原有的 `appendSwitch`） | 查明：`executableArgs` 只写进 `.desktop` 的 `Exec=`（electron-builder 24.13.3 `LinuxTargetHelper.js`），桌面图标 / 应用菜单启动带参数，终端 `/usr/bin/<name>` 不带；root 检查早于主进程 JS，`appendSwitch` 很可能来不及生效（按 Chromium 启动顺序判断，未实测）。用户决定不支持终端以 root 启动：frame README 新增「Linux 启动与沙箱」，两个项目 `executableArgs` 注释写明原因与生效范围；不收进 frame（留在项目配置中直观可见）。真机验证见 §5 Linux 补充项 |
@@ -175,6 +175,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-T1（可视化打包）按用户要求从清单删除。
 - F7-T2 完成：frame 打包默认 npmmirror 镜像，两个项目加 `.npmrc`。
 - F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。
+- 用户决定：暂缓项 F7-R2、F13、F7-S2 转为正式项，并入 §8.4「二、待处理」。
 - K14 完成：Linux 安装对齐业务项目 develop（龙芯终端恢复标题、提示与 sleep 3；非龙芯交给系统安装器后不退出），以线上验证为准；新增优化项 K20（探究更好的 Linux 安装方式）。
 - P9 验证完成：问卷 Windows `pack --dir --env test`，用户用测试账号登录并进入两份带资源的试卷（两轮）。作答页资源缓存走通：图片、mp4（1 MB）、mp3（6.1 MB）均「缓存完成」，再次进入「命中缓存」；离开试卷时进行中的下载「缓存已取消」（`stop()` 正常路径）。Electron 22 另行复现取消：toolkit 删除临时文件成功、无残留（中途看到的 `.mp3.tmp-*` 是第二轮下载进行中的临时文件）。停顿 60 秒中止的路径仍由单测与 11-21 登录页资源包实测覆盖。
 - F6 验证完成：两个项目 Windows `pack --dir` 打包运行，经调试端口开启网络监听后刷新页面——整合首页 3 个样式表、6 张图片，问卷登录页 3 个样式表、3 张图片、1 个字体，全部加载成功、无失败请求，截图显示正常。整合首页随后提示「数据加载失败」，原因是测试后台的问卷子应用包缺 `env`（记入收尾·后台改造），与 F6 无关。
@@ -247,26 +248,21 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 （无，F7 子清单已全部处理。）
 
-**二、方案已整理、未动手（§2）**：本机写代码和单测，交付时附测试清单，由用户在测试机上手动测试
+**二、待处理（逐条确认后再改）**：Linux 相关的本机写代码和单测，交付时附测试清单，由用户在测试机上手动测试
 
 | # | 问题（简） |
 |---|---|
 | K13 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 |
 | K20 | 探究 Linux 上更好的安装方式（业界常用、普适、用户能看到反馈），优化项 |
+| F7-R2 | 整合客户端退出时多数路径直接 `app.exit`，最后一段日志可能丢失（讨论结论见 §3.1） |
+| F13 | 龙芯打包依赖龙芯 npm 源与 Electron 镜像，源一挂就无法打包 |
+| F7-S2 | 加密范围（bake 全部文件 / frame 只加密 `.js`），与 F7-S1 加密暂不支持相关 |
 
 **二之一、新发现待确认（§3）**
 
 （无，F15 已完成。）
 
-**三、暂缓 / 只记录不做**
-
-| # | 问题（简） | 状态 |
-|---|---|---|
-| F7-R2 | 整合客户端退出时多数路径直接 `app.exit`，最后一段日志可能丢失 | 用户决定暂缓，讨论结论见 §3.1 |
-| F13 | 龙芯打包依赖龙芯 npm 源与 Electron 镜像，源一挂就无法打包 | 先记录不做 |
-| F7-S2 | 加密范围（bake 全部文件 / frame 只加密 `.js`） | 随 F7-S1 搁置，恢复加密时一起设计 |
-
-**四、等条件满足的验证与收尾**
+**三、等条件满足的验证与收尾**
 
 | 项 | 内容 | 卡在 |
 |---|---|---|
