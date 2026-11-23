@@ -78,7 +78,7 @@
 | # | 归属 | 状态 | 问题 | 备注 |
 |---|---|---|---|---|
 | F7-R1 | 接入层（两个宿主） | 已完成（2026-11-21，问卷 `d515b706`，整合 `9d4b56b`） | 主进程未捕获的异常与 Promise 拒绝不写日志 | 用户决定不放 toolkit（全局监听会改变进程行为，属宿主决策）；两个宿主入口各自监听并记日志，不测默认行为 |
-| F7-R2 | 接入层（整合） | 待确认（2026-11-23 用户决定由暂缓转为正式项） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
+| F7-R2 | 接入层（整合） | 已完成（2026-11-23，整合本次提交：退出行为对齐 develop，只补等日志写完；下方原「app.quit() 设计」讨论未采用） | 整合客户端退出时多数路径直接 `app.exit`、不等日志写完，最后一段日志可能丢失（6 处退出只有启动失败 1 处先 `Logger.shutdown()`）；问卷与 toolkit `installApp` 不受影响 | 讨论结论（恢复时从这里开始）：倾向改用 `app.quit()` 设计——`before-quit` 标记正在退出、主窗口关闭拦截在退出时放行、`will-prevent-unload` 忽略页面拦截、`will-quit` 等日志写完；退出码统一 0；删除退出热键 `Command+Control+Alt+Space`；删除 `window-all-closed`（Electron 22 实测不监听时关闭最后一个窗口会自动 `app.quit`，不会挂起）；启动页不拦截关闭；需补「重复退出只收尾一次」「relaunch 只生效一次」；Windows 关机时主窗口拦截关闭是否阻止关机未实测（可监听 `session-end`）；toolkit `installApp` 保留 `app.exit`，退出码改 0；需确认子应用是否依赖 `beforeunload` 做异步保存 |
 | F7-R3 | toolkit / 接入层（两个宿主） | 已完成（2026-11-22，toolkit / 问卷 / 整合见 §8.0） | 「打开系统时间设置」只支持 Windows；复查发现打不开时两个页面都可能不提示（问卷非 Windows 点击无反应，整合 Windows 打开失败无提示）；两个宿主各写一份 | 用户决定：收进 toolkit `libs/os` 的 `openDateTimeSettings()`，**仅支持 Windows**，其他平台返回 `{ opened: false, reason: 'unsupported-platform' }`，启动失败返回 `reason: 'open-failed'`，不抛异常；Windows 改为进程启动即返回（实测 rundll32 在对话框关闭前不退出，原写法调用一直挂着）。两个宿主删除自己的实现；页面 `opened` 为 false 时弹窗（`$Modal.warning`）提示手动修改。Windows 两个项目打包实测通过；Linux / macOS 打开面板不做 |
 | F7-B1 | frame | 已完成（2026-11-22，frame `4949223`） | `dev:app` 启动 Electron 不带 `--inspect` 等调试参数，无法给主进程挂调试器 | 用户决定：新增可选参数 `--inspect [port]`，不传时行为不变；默认端口 9229（与 Node 一致，VS Code 附加、`chrome://inspect` 无需配置），同时加 `--trace-warnings`；不加 bake 的 `--unhandled-rejections=strict`（开发与打包行为会不一致，F7-R1 已记日志）；端口非 1–65535 整数报错退出；`--pkg-only` 时提示不起作用。调试端口与 dev server 端口 8023 提为常量。问卷实测：9229 可连接并在主进程执行语句，不传参数不占端口，关闭 Electron 后 `dev:app` 正常退出 |
 | F7-B2 | frame | 不改（2026-11-22 用户决定） | `dev:app` 关闭 Electron 后直接退出，不能直接重启 | 用户不要关闭后询问重启的交互；保持关闭 Electron 即停止 dev server 并退出 |
@@ -175,6 +175,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F7-T1（可视化打包）按用户要求从清单删除。
 - F7-T2 完成：frame 打包默认 npmmirror 镜像，两个项目加 `.npmrc`。
 - F7-T3 完成：dev server 端口被占用时自动换并提示占用进程；日志警告黄色、错误红色。
+- F7-R2 完成：对比整合 develop，退出路径（退出码、时机）一致，develop 主进程无日志，丢日志是新增日志功能未补全；用户决定小改——新增 `libs/exitApp.js`（`await Logger.shutdown()` 后 `app.exit(code)`），页面退出 / 重启、退出热键、所有窗口关闭、打开启动页失败、内置包缺失统一调用。打包实测：页面退出码 1 且最后一条日志落盘；关闭主窗口退出码 1、无残留进程；退出热键未实测（同一函数）。
 - 用户决定：暂缓项 F7-R2、F13、F7-S2 转为正式项，并入 §8.4「二、待处理」。
 - K14 完成：Linux 安装对齐业务项目 develop（龙芯终端恢复标题、提示与 sleep 3；非龙芯交给系统安装器后不退出），以线上验证为准；新增优化项 K20（探究更好的 Linux 安装方式）。
 - P9 验证完成：问卷 Windows `pack --dir --env test`，用户用测试账号登录并进入两份带资源的试卷（两轮）。作答页资源缓存走通：图片、mp4（1 MB）、mp3（6.1 MB）均「缓存完成」，再次进入「命中缓存」；离开试卷时进行中的下载「缓存已取消」（`stop()` 正常路径）。Electron 22 另行复现取消：toolkit 删除临时文件成功、无残留（中途看到的 `.mp3.tmp-*` 是第二轮下载进行中的临时文件）。停顿 60 秒中止的路径仍由单测与 11-21 登录页资源包实测覆盖。
@@ -254,7 +255,6 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 |---|---|
 | K13 | Linux `dpkg -i` 无 `--force-overwrite`，文件冲突时安装直接失败且几乎不可排查 |
 | K20 | 探究 Linux 上更好的安装方式（业界常用、普适、用户能看到反馈），优化项 |
-| F7-R2 | 整合客户端退出时多数路径直接 `app.exit`，最后一段日志可能丢失（讨论结论见 §3.1） |
 | F13 | 龙芯打包依赖龙芯 npm 源与 Electron 镜像，源一挂就无法打包 |
 | F7-S2 | 加密范围（bake 全部文件 / frame 只加密 `.js`），与 F7-S1 加密暂不支持相关 |
 
