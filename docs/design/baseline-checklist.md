@@ -182,6 +182,7 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - F15 ④-2 完成：nsis 的 `oneClick`、`allowToChangeInstallationDirectory`、`perMachine`、`deleteAppDataOnUninstall`、`language`、`uninstallDisplayName` 收进 frame 预设（用户决定，`deleteAppDataOnUninstall` 保持 true），两个项目删除；合并后配置不变，问卷 Windows 完整打包成功。已告知用户：`deleteAppDataOnUninstall` 卸载时（升级除外）会删除 `%APPDATA%\专项数据采集系统`，两个客户端 productName 相同、共用该目录，卸载其一会删除另一个的数据（按 `uninstaller.nsh:218-225` 推断，未实测）；README 已写明。
 - F15 ④-3（部分）完成：按用户决定去掉安装包文件名的环境名映射（prod→release），两个项目删除 `artifactName` 与映射代码，直接用 frame 预设的 `${env.BC_ENV}`；整合 `pack --env prod` 实测安装包为 `专项数据采集系统_win_x64_prod_v1.5.0.exe`，与更新包 `eachinacoreframe-prod-v1.5.0.asax` 的环境名一致。
 - F15 ④-3 完成：`dmg.title`、`linux.category` 收进 frame 预设，两个项目删除，合并后配置不变。F15 完成，项目配置只剩 ⑤ 业务项（appId、copyright、legalTrademarks、签名、executableArgs、deb.packageName、nsis.runAfterFinish、nsis.guid）。
+- F15 追加（用户决定）：`nsis.runAfterFinish: true`、`mac.identity: null`、`linux.executableArgs: ['--no-sandbox']` 收进 frame 预设（`executableArgs` 推翻 F7-S5「留在项目」的决定，README「Linux 启动与沙箱」已改）；问卷保留 `runAfterFinish: false` 覆盖；`appId` 不收；`nsis.guid` 待讨论。合并后配置两个项目均不变。
 - 讨论中由 `resources/packages/` 的复制规则引出 F16（安装包 `resources/` 先整理到 `dist/resources/` 再整体复制），用户确认后完成，详见 §3 F16。
 
 ### 8.0.1 2026-11-22
