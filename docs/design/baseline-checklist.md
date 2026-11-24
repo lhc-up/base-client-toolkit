@@ -49,6 +49,7 @@
 | K19 | P1 | 不改（2026-11-21 用户决定） | 主进程漏调 `Service.init` / `Notice.init` 时 preload 仍会阻塞 2–8 秒（K7 遗留） | 按框架接入时 `createHost` 一定会 init 两者，不会出现阻塞；只在文档写明何时需要 opt-out（`architecture.md` §2.5），不改代码 | — |
 | K20 | P3 | 待探究（2026-11-23 新增，优化项） | Linux 大版本安装沿用业务项目原实现：龙芯开 xterm 执行 `sudo dpkg -i`，其他发行版 `xdg-open` 交给系统安装器、失败再用 sudo-prompt 静默 `dpkg -i`；成功与否靠 stderr 是否为空判断，用户可见的反馈依赖终端 / 系统安装器 | 调研业界做法：用得最多、各发行版（含 UOS、麒麟、龙芯）普适、思路清晰，且安装过程用户能看到反馈（不能全程后台静默）。候选方向待调研后列出并对比 | 调研结论 + 方案，确认后再改；Linux / 龙芯真机验证 |
 | K21 | P2 | 已完成（2026-11-23，toolkit 本次提交） | `pkg.download` 先写 `UserData/Packages/<uuid>.tmp-<uuid>`，下载中途进程退出（用户退出、崩溃、断电）时临时文件残留；启动时只清理 `.asax` 临时副本，不清理下载残留，会一直累积（每个最大一个完整包） | 用户决定（只改包下载，不动 `libs/download` 与资源下载）：临时文件放在下载目录的 `.downloading/` 下（同一磁盘，完成后直接改名），每次运行第一次下载前整个清空，并删除旧版本直接放在下载目录下的 `<uuid>` / `<uuid>.tmp-<uuid>`；选包不认该目录 | 单测；整合打包实测：下载途中强制结束后残留只在 `.downloading/`（13 MB），再次启动第一次下载前被清除 |
+| K22 | P2 | 待确认（2026-11-24 新发现） | toolkit 有 5 条单测只能在 Windows 上通过：`tests/capability/update/update.test.js` 暂存安装程序 3 条、`tests/main-libs-pkg.test.js` dev server 来源 2 条，用例中写死 `C:\Temp\...` 等 Windows 路径，macOS 上 `path.isAbsolute` 为 false 走了另一分支（Mac Node 22.15.1 实测 651/656）。底座要支持全平台，单测应能在 macOS / Linux 上跑通 | 待确认后改单测（用 `path.resolve` / `os.tmpdir()` 等与平台无关的路径） | 用户 Mac 上 `yalc publish` 触发 `prepublishOnly` 时发现 |
 
 ## 3. frame 条目
 
@@ -265,7 +266,9 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 
 **二之一、新发现待确认（§2 / §3）**
 
-（无。）
+| # | 问题（简） |
+|---|---|
+| K22 | toolkit 5 条单测写死 Windows 路径，macOS / Linux 上失败 |
 
 **三、等条件满足的验证与收尾**
 
