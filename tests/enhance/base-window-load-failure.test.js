@@ -57,6 +57,13 @@ describe('BaseWindow.create()：页面加载失败与渲染进程退出写日志
         expect(getLoggerMock().error).toHaveBeenCalledWith('[窗口] 渲染进程退出', { reason: 'crashed', exitCode: 3 });
     });
 
+    it('渲染进程正常退出（clean-exit）：记 info，不记错误', () => {
+        new W().create();
+        lastInstance().webContents._emit('render-process-gone', {}, { reason: 'clean-exit', exitCode: 0 });
+        expect(getLoggerMock().info).toHaveBeenCalledWith('[窗口] 渲染进程退出', { reason: 'clean-exit', exitCode: 0 });
+        expect(getLoggerMock().error).not.toHaveBeenCalled();
+    });
+
     it('loadURL 失败不产生未处理的 Promise 拒绝', async () => {
         const unhandled = vi.fn();
         process.on('unhandledRejection', unhandled);

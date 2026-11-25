@@ -9,7 +9,7 @@ const { APP_ICON_FILE } = require('../frameContract');
 const ERR_ABORTED = -3;
 
 /**
- * 主页面加载失败、渲染进程退出时写错误日志。子 frame（如交互题 iframe）不记，免得刷屏。
+ * 主页面加载失败、渲染进程退出时写错误日志（渲染进程正常退出 `clean-exit` 记 info）。子 frame（如交互题 iframe）不记，免得刷屏。
  *
  * @param {import('electron').BrowserWindow} window
  */
@@ -21,7 +21,13 @@ function logLoadFailures(window) {
         Logger.error('[窗口] 页面加载失败', { errorCode, errorDescription, url: validatedURL });
     });
     window.webContents.on('render-process-gone', (event, details) => {
-        Logger.error('[窗口] 渲染进程退出', { reason: details.reason, exitCode: details.exitCode });
+        const info = { reason: details.reason, exitCode: details.exitCode };
+        // clean-exit：渲染进程以退出码 0 正常退出（如 Linux 大版本安装时安装前脚本结束了客户端进程），不是故障
+        if (details.reason === 'clean-exit') {
+            Logger.info('[窗口] 渲染进程退出', info);
+            return;
+        }
+        Logger.error('[窗口] 渲染进程退出', info);
     });
 }
 
