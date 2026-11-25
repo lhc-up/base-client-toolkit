@@ -6,6 +6,13 @@ const require = createRequire(import.meta.url);
 const nodePath = require('node:path');
 const { createUpdateCapability } = require('../../../src/main/capability/update/createUpdateCapability');
 
+// 按当前系统生成的绝对路径：Windows 上是 <当前盘>:\Temp 等，macOS / Linux 上是 /Temp 等。
+// 功能代码校验安装程序路径时按模拟的平台用 path.win32 / path.posix，拼接与解析暂存目录时用当前系统的 path；
+// 写死的 Windows 盘符路径在 macOS / Linux 上不是绝对路径，会被拼上当前目录。/Temp 这类路径对 path.win32 也是绝对路径
+const TEMP = nodePath.resolve('/Temp');
+const INCOMING = nodePath.resolve('/incoming');
+const OUTSIDE = nodePath.resolve('/outside');
+
 function createHarness(platform = 'win32', overrides = {}) {
     const calls = [];
     const files = new Map();
@@ -49,7 +56,7 @@ function createHarness(platform = 'win32', overrides = {}) {
             isMacOS: () => platform === 'darwin',
         },
         filePathConfig: {
-            temp: platform === 'win32' ? 'C:\\Temp' : '/tmp',
+            temp: platform === 'win32' ? TEMP : '/tmp',
         },
         loadSudoPrompt: () => ({ exec: vi.fn() }),
         ...overrides,
@@ -67,7 +74,7 @@ describe('capability/update 退出', () => {
                 shutdown: () => new Promise(resolve => { finishShutdown = resolve; }),
             },
         });
-        const pending = update.installApp('C:/Temp/setup.exe');
+        const pending = update.installApp(nodePath.join(TEMP, 'setup.exe'));
         await new Promise(resolve => setTimeout(resolve, 10));
         expect(calls.some(c => c[0] === 'exit')).toBe(false);
         finishShutdown();
@@ -79,7 +86,7 @@ describe('capability/update 退出', () => {
 describe('capability/update platform contract', () => {
     it.each(['win32', 'darwin'])('%s 使用 shell.openPath 启动安装器并退出旧进程', async platform => {
         const { calls, update } = createHarness(platform);
-        const installer = platform === 'win32' ? 'C:\\Temp\\setup.exe' : '/tmp/setup.pkg';
+        const installer = platform === 'win32' ? nodePath.join(TEMP, 'setup.exe') : '/tmp/setup.pkg';
         await expect(update.installApp(installer)).resolves.toEqual({ started: true });
         expect(calls).toContainEqual(['openPath', installer]);
         expect(calls).toContainEqual(['exit', 1]);
@@ -98,7 +105,7 @@ describe('capability/update platform contract', () => {
     it('shell.openPath 返回错误时显示错误并返回失败', async () => {
         const shell = { openPath: vi.fn(async () => 'access denied') };
         const { calls, update } = createHarness('win32', { shell });
-        await expect(update.installApp('C:\\Temp\\setup.exe')).resolves.toEqual({
+        await expect(update.installApp(nodePath.join(TEMP, 'setup.exe'))).resolves.toEqual({
             started: false,
             reason: 'open-failed',
             message: 'access denied',
@@ -109,7 +116,7 @@ describe('capability/update platform contract', () => {
     it('rejects relative paths and installer extensions for another platform', async () => {
         const { calls, update } = createHarness('win32');
         await expect(update.installApp('setup.exe')).rejects.toThrow(/absolute/);
-        await expect(update.installApp('C:\\Temp\\payload.deb')).rejects.toThrow(/installer/);
+        await expect(update.installApp(nodePath.join(TEMP, 'payload.deb'))).rejects.toThrow(/installer/);
         expect(calls.some(call => call[0] === 'openPath')).toBe(false);
     });
 
@@ -156,11 +163,11 @@ describe('capability/update platform contract', () => {
 describe('capability/update staged installer', () => {
     it('copies, verifies, re-verifies, and launches a staged Windows installer', async () => {
         const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\setup.exe';
+        const sourcePath = nodePath.join(INCOMING, 'setup.exe');
         const payload = Buffer.from('trusted installer');
         const integrity = createHash('sha256').update(payload).digest('hex');
         const stagedPath = nodePath.join(
-            'C:\\Temp',
+            TEMP,
             'base-client-toolkit-installers',
             'temp-id',
             'setup.exe',
@@ -184,11 +191,11 @@ describe('capability/update staged installer', () => {
             integrity: '0'.repeat(64),
         })).rejects.toThrow(/absolute/);
         await expect(update.stageLocalInstaller({
-            sourcePath: 'C:\\incoming\\setup.deb',
+            sourcePath: nodePath.join(INCOMING, 'setup.deb'),
             integrity: '0'.repeat(64),
         })).rejects.toThrow(/installer/);
         await expect(update.stageLocalInstaller({
-            sourcePath: 'C:\\incoming\\setup.exe',
+            sourcePath: nodePath.join(INCOMING, 'setup.exe'),
             integrity: 'bad',
         })).rejects.toThrow(/SHA-256/);
         expect(calls.some(call => call[0] === 'copy')).toBe(false);
@@ -203,7 +210,7 @@ describe('capability/update staged installer', () => {
 
     it('refuses a staged installer that was replaced after staging', async () => {
         const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\setup.exe';
+        const sourcePath = nodePath.join(INCOMING, 'setup.exe');
         const payload = Buffer.from('trusted installer');
         const integrity = createHash('sha256').update(payload).digest('hex');
         files.set(sourcePath, payload);
@@ -216,7 +223,7 @@ describe('capability/update staged installer', () => {
 
     it('rejects forged staged paths outside the controlled temp namespace', async () => {
         const { calls, files, update } = createHarness();
-        const filePath = 'C:\\outside\\setup.exe';
+        const filePath = nodePath.join(OUTSIDE, 'setup.exe');
         const payload = Buffer.from('outside installer');
         const integrity = createHash('sha256').update(payload).digest('hex');
         files.set(filePath, payload);
@@ -228,7 +235,7 @@ describe('capability/update staged installer', () => {
 
     it('discards only a controlled staged installer directory and is idempotent', async () => {
         const { calls, files, update } = createHarness();
-        const sourcePath = 'C:\\incoming\\setup.exe';
+        const sourcePath = nodePath.join(INCOMING, 'setup.exe');
         const payload = Buffer.from('trusted installer');
         const integrity = createHash('sha256').update(payload).digest('hex');
         files.set(sourcePath, payload);
@@ -239,7 +246,7 @@ describe('capability/update staged installer', () => {
         expect(update.discardStagedInstaller(staged)).toBe(true);
         expect(calls.filter(call => call[0] === 'remove' && call[1] === stageDir)).toHaveLength(2);
         expect(() => update.discardStagedInstaller({
-            filePath: 'C:\\outside\\setup.exe',
+            filePath: nodePath.join(OUTSIDE, 'setup.exe'),
             integrity,
         })).toThrow(/staged installer/);
     });
@@ -256,18 +263,18 @@ describe('capability/update staged installer', () => {
         });
 
         await expect(update.stageLocalInstaller({
-            sourcePath: 'C:\\incoming\\setup.exe',
+            sourcePath: nodePath.join(INCOMING, 'setup.exe'),
             integrity: '0'.repeat(64),
         })).rejects.toBe(failure);
         expect(calls).toContainEqual([
             'remove',
-            nodePath.join('C:\\Temp', 'base-client-toolkit-installers', 'temp-id'),
+            nodePath.join(TEMP, 'base-client-toolkit-installers', 'temp-id'),
         ]);
     });
 
     it('cleans only expired entries from the controlled installer namespace', () => {
         const calls = [];
-        const stageRoot = nodePath.join('C:\\Temp', 'base-client-toolkit-installers');
+        const stageRoot = nodePath.join(TEMP, 'base-client-toolkit-installers');
         const now = 2_000_000;
         const { update } = createHarness('win32', {
             fse: {

@@ -12,6 +12,10 @@ const semver = require('semver');
 const { createPkgLib } = require('../src/main/libs/pkg/createPkgLib');
 const { PKG_SOURCE } = require('../src/shared/pkgSource');
 
+// 按当前系统生成的绝对路径（Windows 上是 <当前盘>:\proj\…，macOS / Linux 上是 /proj/…）：
+// 入口「已是绝对路径的原样使用」按当前系统判断，写死的 Windows 盘符路径在 macOS / Linux 上不是绝对路径
+const DEV_MAIN = path.resolve('/proj/app/main/pkg.js');
+
 /**
  * 真实临时目录 + 注入的描述文件读取：包文件内容即描述文件 JSON（不必构造真实归档）。
  */
@@ -70,9 +74,9 @@ describe('libs/pkg parseDevSources', () => {
     it('合法项保留；devServer 需要 url，file 需要 path；格式错误的项忽略', () => {
         const result = harness.lib.parseDevSources(JSON.stringify({
             a: { type: 'devServer', url: 'http://localhost:8023/' },
-            b: { type: 'file', path: 'D:/x.asax' },
+            b: { type: 'file', path: path.resolve('/x.asax') },
             c: { type: 'semver' },
-            d: { type: 'devServer', main: 'D:/app/main/pkg.js' },
+            d: { type: 'devServer', main: path.resolve('/app/main/pkg.js') },
             e: { type: 'unknown' },
         }));
         expect(Object.keys(result)).toEqual(['a', 'b', 'c']);
@@ -154,7 +158,7 @@ describe('libs/pkg get：devServer / file', () => {
     it('devServer：读 dev server 根地址下的描述文件，入口原样使用，忽略版本', async () => {
         const fetchJson = vi.fn(async () => ({
             name: 'demo', version: '1.0.0', env: 'prod',
-            main: 'D:/proj/app/main/pkg.js',
+            main: DEV_MAIN,
             renderer: 'http://localhost:8023/index.html',
             update: 'http://localhost:8023/update.html',
         }));
@@ -167,7 +171,7 @@ describe('libs/pkg get：devServer / file', () => {
         expect(pkg).toEqual({
             name: 'demo', version: '1.0.0', env: 'prod',
             source: PKG_SOURCE.DEV_SERVER,
-            main: 'D:/proj/app/main/pkg.js',
+            main: DEV_MAIN,
             renderer: 'http://localhost:8023/index.html',
             update: 'http://localhost:8023/update.html',
         });
@@ -175,7 +179,7 @@ describe('libs/pkg get：devServer / file', () => {
 
     it('调用方指定来源时不按来源规则', async () => {
         const fetchJson = vi.fn(async () => descriptorOf('demo', '1.0.0', {
-            main: 'D:/proj/app/main/pkg.js', renderer: 'http://localhost:8066/index.html',
+            main: DEV_MAIN, renderer: 'http://localhost:8066/index.html',
         }));
         harness = createHarness({ runtime: { isHostDev: true, devPkgSources: {} }, fetchJson });
         const pkg = await harness.lib.get('demo', {
