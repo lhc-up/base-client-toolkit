@@ -166,11 +166,30 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 2. ~~F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置~~：frame 内置并加检查（2026-11-21）。
 3. ~~问卷 `docs/base-client/已知问题.md` 的既有更新提交（`39fcdf98`）保留还是撤销~~：已关闭，保留（2026-11-21）。
 
-## 8. 进度记录（最近一次：2026-11-25）
+## 8. 进度记录（最近一次：2026-11-27）
 
 > 只记录「做到哪了、下一步做什么」，条目状态以上面各表为准。下次开始时先读本节。
 
-### 8.0 2026-11-25
+### 8.0 2026-11-27
+
+- K13 + K20 + F13 讨论定稿并实现（详见各条目）：安装标识按客户端区分（deb 包名 = name、`/opt/<appId>`、数据目录 `<appData>/<name>`、`--replaces=guojiajiance`）；Linux 大版本安装封装为 `@base-client/deb-installer`（系统安装器 → 终端 + 一次 pkexec → 静默），交出后客户端退出；electron-builder 改用「官方包 + 补丁」生成的 `@base-client/builder-util` / `@base-client/app-builder-lib`；龙芯 `--arch loongarch64`（旧世界）/ `loong64`（新世界，留位置报错）。
+- 实现中发现并修复：`.npmrc` 的 electron_mirror 使龙芯镜像失效（打包期间配置的镜像优先）；从旧目录升级时 `/usr/bin/<name>` 可能仍指向旧目录（安装后脚本清理同名 update-alternatives 候选）。
+- 本机验证：各仓库单测（deb-installer 40、改版 6、frame 390、toolkit 657、问卷 29+34）全通过；两个项目 Windows 安装包、问卷数据目录 `%APPDATA%\questionaire`、Linux x64 `--dir`、龙芯 `loongarch64 --dir`（LoongArch ELF，e_flags 0x03）。
+- 测试包 `D:\Desktop
+pmaseline-linux-kit`（与 `.tar.gz`）已更新为全功能验证版：第 0～20 步，新增两客户端共存、从旧版本升级（需上一版的 `install/q-2.7.2.deb` → `old/q-old.deb`）、静默安装成功 / 取消；打包脚本改为 yalc 发布五个包、不再切换龙芯源 electron-builder。尚未在 Mac 上打包、未上测试机。
+
+**交接（2026-11-27 收工）**
+
+- 用户决定：五个包（`@base-client/builder-util`、`app-builder-lib`、`deb-installer`、`toolkit`、`frame`）全部发布到 npm 公共仓库，**逐个讨论后发布**，顺序 builder-util → app-builder-lib → deb-installer → toolkit → frame。发布后两个项目只保留 toolkit、frame 的版本号依赖，删掉三个间接依赖（现在是 yalc 的 `file:.yalc/…`）。npm 上五个包名均未被占用（`npm view` 404）；`@base-client` 组织是否可用、用谁的账号，待用户确认。
+- **进行中：`@base-client/builder-util` 发布前确认**（已给出、未回复）：① 版本号——现为 `24.13.1-bc.1`（semver 预发布，npm 需 `--tag`、范围匹配不到），可选 a `1.0.0`（上游版本写进说明）/ b 保持并 `--tag latest` / c `24.13.1001`；② `repository`/`homepage`/`bugs` 改指 `github.com/lhc-up/base-client-electron-builder`（`directory: packages/builder-util`）；③ `description` 与 README 改为说明改版内容、上游版本、仅供 app-builder-lib 使用；④ `LICENSE`（MIT 原文）保留、`author` 保留原作者并加 `contributors`（名字 / 邮箱待用户给）；⑤ 加 `publishConfig.access: public`。这些都要写进 `scripts/patches.js` 的 `packageJson()` 与生成流程（README 由脚本复制），不手改生成结果。
+- 用户问过补丁方案的原理，已说明（生成时按原文精确替换、原文须恰好出现 1 次；引用用正则改写；JSON 按结构改），仓库名是否改为 `base-client-builder-patches` 等未定。
+- 两个新仓库只在本地：`D:\Desktop
+pmase-client-deb-installer`（`bb34af1`）、`D:\Desktop
+pmase-client-electron-builder`（`1c34eff`），未建远程。
+- 未推送：toolkit 领先 origin 14 个提交（`c844cc2`）、frame 3 个（`9c3bb2d`）、整合 1 个（`3b3d9cb`）。问卷 `feature-base-client` 远程已到 `b5aa479d`（11-26 21:28、11-27 17:15 有 push，非本会话执行）。
+- 后续顺序：npm 发布（逐个）→ 项目改为版本号依赖 → Mac 打测试包 → 四台测试机全功能验证 → 推送 → 收尾。
+
+### 8.0.0 2026-11-25
 
 - Linux arm64 平台验证完成（§5）：麒麟 V10 SP1（KYLIN_RELEASE_ID 2303）、aarch64、X11（UKUI），Node 16 运行模拟后台。两个项目安装、启动与图标、root 终端、热更新、大版本更新、整合进入子应用、卸载均通过；xdg-open 打开系统安装器时不弹密码、点安装时才弹（K20 关注的误判未出现），安装器装完只有「确定」按钮。第一轮问卷装完 2.8.0 后的启动没有日志与请求记录，复测补齐：普通用户启动选用内置 2.8.0，启动页与登录页均显示 V2.8.0。本期验证的 5 个平台组合全部完成。
 - Linux loong64 平台验证完成（§5）：Loongnix 20（DaoXiangHu）、loongarch64（dpkg 架构名为 `loongarch64`，不是新世界的 `loong64`），Node 14 运行模拟后台。两个项目安装、启动、root 终端、热更新、大版本更新（龙芯终端安装）、整合进入子应用、卸载均通过。安装后出现了桌面图标（系统自动生成）。
