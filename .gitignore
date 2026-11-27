@@ -33,3 +33,7 @@ keyboardhook.log
 # SpecStory files
 .specstory/
 .specstory/**
+
+# yalc 本地联调（不提交）
+.yalc/
+yalc.lock

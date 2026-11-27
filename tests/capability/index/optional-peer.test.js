@@ -11,7 +11,7 @@ describe('capability aggregate optional peers', () => {
         const script = `
             const Module = require('node:module');
             const optionalPeers = new Set([
-                '@vscode/sudo-prompt', 'download', 'electron-store', 'log4js', 'semver',
+                'download', 'electron-store', 'log4js', 'semver',
             ]);
             const originalLoad = Module._load;
             Module._load = function (request, parent, isMain) {

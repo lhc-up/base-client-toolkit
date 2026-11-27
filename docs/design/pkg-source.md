@@ -166,7 +166,7 @@ BC_DEV_PKG_SOURCES=
 Electron 只识别路径中带 `.asar` 的归档，`.asax` 不能直接加载。需要加载 `.asax` 时（`file` 指定的 `.asax`、本地调试时内置目录中的 `.asax`），
 toolkit 先复制为 `.asar` 临时副本再加载：
 
-- 位置：`<系统临时目录>/base-client/<宿主名>/pkg-copies/`。系统或清理工具会清理临时目录，作为兜底。
+- 位置：`<系统临时目录>/base-client/<用户数据目录名>/pkg-copies/`（宿主用 `main/libs/userDataDir` 把用户数据目录设为 `<appData>/<name>`，因此按客户端区分；productName 相同的客户端可同时运行，按 productName 区分会互相清掉对方正在使用的副本）。系统或清理工具会清理临时目录，作为兜底。
 - 文件名：`<原文件名去扩展>-<文件大小>-<修改时间>.asar`；同一文件在一次运行中只复制一次。
 
 - 清理：每次启动、选包之前，删除该目录下的全部旧副本。本次运行尚未加载它们，可以删除；

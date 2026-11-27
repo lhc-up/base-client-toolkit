@@ -4,14 +4,13 @@ function createUpdateCapability(deps) {
         fse,
         randomUUID,
         createHash,
-        execFile,
         app,
         dialog,
         shell,
         logger,
         os,
         filePathConfig,
-        loadSudoPrompt,
+        debInstaller,
     } = deps;
 
     const installerStageRoot = path.join(filePathConfig.temp, 'base-client-toolkit-installers');
@@ -32,35 +31,6 @@ function createUpdateCapability(deps) {
             .update(fse.readFileSync(filePath))
             .digest('hex');
         if (actual !== expected) throw new Error('update package integrity check failed');
-    }
-
-    /**
-     * 新开 xterm 终端窗口安装，显示安装过程。安装成功后提示，无论成败窗口都停留 3 秒再关闭。
-     * 命令与业务项目原实现一致；安装包路径作为 sh 的参数 $1 传入，不拼进命令字符串。
-     */
-    function installByOpenShell(filePath) {
-        const script = 'sudo dpkg -i "$1" && echo 安装完成，3s后退出安装程序\nsleep 3';
-        return new Promise(resolve => {
-            execFile(
-                'xterm',
-                ['-T', '安装更新', '-e', 'sh', '-c', script, 'sh', filePath],
-                (err, _stdout, stderr) => resolve(!err && !stderr),
-            );
-        });
-    }
-
-    function installByXdgOpen(filePath) {
-        return new Promise(resolve => {
-            execFile('xdg-open', [filePath], (err, _stdout, stderr) => resolve(!err && !stderr));
-        });
-    }
-
-    function installByDpkg(filePath) {
-        return new Promise(resolve => {
-            const sudo = loadSudoPrompt();
-            const quotedPath = `'${filePath.replaceAll("'", "'\\''")}'`;
-            sudo.exec(`dpkg -i ${quotedPath}`, { name: 'install' }, error => resolve(!error));
-        });
     }
 
     function assertInstallerPath(filePath) {
@@ -150,16 +120,6 @@ function createUpdateCapability(deps) {
         return { removed };
     }
 
-    async function installDebOnLinux(filePath) {
-        try {
-            if (os.isLoongnix()) return installByOpenShell(filePath);
-            return await installByXdgOpen(filePath) || installByDpkg(filePath);
-        } catch (err) {
-            logger.error(err);
-            return false;
-        }
-    }
-
     /**
      * 退出应用：先等日志 appender 全部写完，再 `app.exit(1)`。
      *
@@ -183,20 +143,66 @@ function createUpdateCapability(deps) {
         return { started: true };
     }
 
-    async function installApp(filePath) {
+    /** 静默安装（Linux 兜底的最后一层）的结果文件：客户端下次启动时由 consumeInstallResult 读取 */
+    const installResultFile = path.join(filePathConfig.updatePackage, '.install-result.json');
+
+    /**
+     * Linux：交给 @base-client/deb-installer 的 installDeb（系统安装器 → 终端 → 静默），交出后退出客户端。
+     * 安装器、终端、后台脚本都与客户端脱离，客户端退出不影响它们；安装是否成功由它们自己提示
+     * （静默安装把结果写入结果文件，并按 options.relaunch 重新启动客户端）。
+     */
+    async function installDebOnLinux(filePath, options) {
+        const result = await debInstaller.installDeb({
+            debPath: filePath,
+            packageName: options.packageName,
+            version: options.version,
+            logger,
+            resultFile: installResultFile,
+            relaunch: options.relaunch,
+        });
+        if (!result.started) {
+            logger.error('[升级] 未能交出安装', result);
+            dialog.showErrorBox('错误提示', '自动更新失败，请下载最新的安装包手动安装！');
+            await quitApp();
+            return { started: false, reason: result.reason, detail: result.detail };
+        }
+        logger.info('[升级] 已交出安装', result);
+        await quitApp();
+        return { started: true, method: result.method };
+    }
+
+    /**
+     * 读取并删除上一次静默安装的结果（没有时返回 null）。宿主在启动时调用，按 status 提示用户。
+     *
+     * @returns {{ status: 'success'|'unauthorized'|'failed', code: number, packageName: string, version: string, logFile: string, finishedAt: string }|null}
+     */
+    function consumeInstallResult() {
+        if (!fse.existsSync(installResultFile)) return null;
+        let result = null;
+        try {
+            result = fse.readJSONSync(installResultFile);
+        } catch (err) {
+            logger.error('[升级] 安装结果文件无法解析', installResultFile, err);
+        }
+        try {
+            fse.removeSync(installResultFile);
+        } catch (err) {
+            logger.error('[升级] 删除安装结果文件失败', installResultFile, err);
+        }
+        return result;
+    }
+
+    /**
+     * 安装大版本。
+     *
+     * @param {string} filePath 安装包绝对路径
+     * @param {{ packageName?: string, version?: string, relaunch?: { command: string, args?: string[] } }} [options]
+     *        仅 Linux 使用：packageName / version 为期望值（与 deb 中不一致则不安装）；relaunch 为静默安装结束后重新启动的命令
+     */
+    async function installApp(filePath, options = {}) {
         if (os.isWindows() || os.isMacOS() || os.isLinux()) assertInstallerPath(filePath);
         logger.info('执行大版本安装文件', filePath);
-        if (os.isLinux()) {
-            const started = await installDebOnLinux(filePath);
-            if (!started) {
-                dialog.showErrorBox('错误提示', '自动更新失败，请下载最新的安装包手动安装！');
-                await quitApp();
-                return { started: false, reason: 'open-failed' };
-            }
-            // 与业务项目原实现一致：龙芯在终端窗口关闭（安装结束）后退出；其他发行版交给系统安装器后不退出
-            if (os.isLoongnix()) await quitApp();
-            return { started: true };
-        }
+        if (os.isLinux()) return installDebOnLinux(filePath, options || {});
         if (os.isWindows() || os.isMacOS()) return openInstaller(filePath);
         logger.error('不支持当前平台自动安装更新');
         return { started: false, reason: 'unsupported-platform' };
@@ -214,6 +220,7 @@ function createUpdateCapability(deps) {
         installStagedInstaller,
         discardStagedInstaller,
         cleanupStagedInstallers,
+        consumeInstallResult,
         quitApp,
     };
 }

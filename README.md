@@ -80,6 +80,7 @@ const sm4 = require('@base-client/toolkit/main/libs/sm4');
 | `os` | 文件 | 平台判断与 Linux 系统信息（见下方「系统信息（os）」） |
 | `shortcut` | 文件 | 全局热键（见下方「热键配置（shortcut）」） |
 | `singleInstance` | 文件 | 单实例锁，返回是否拿到锁（见下方「单实例（singleInstance）」） |
+| `userDataDir` | 文件 | `setUserDataDirByName(name)`：把用户数据目录设为 `<appData>/<name>`（Electron 默认按 productName，同名客户端会共用数据目录、单实例锁互斥）。**须在任何读取用户数据目录的代码之前调用**（单实例检查、`paths`、`logger`、`store` 等），宿主入口最前面调用；不迁移旧数据 |
 | `protocol` | 文件 | 自定义协议：宿主 `declareSchemes`（ready 前一次），包 `serveResource` / `serveIframeResource`（返回撤销函数） |
 | `resourceRoot` | 文件 | 资源根目录：宿主本地调试为 `<项目根目录>/resources`，打包运行为 `process.resourcesPath`；依据宿主运行时 `isHostDev` |
 | `pkg` | 目录 | 应用包的通用操作：`get`（按来源取包）、`download`、`removeOtherVersions`、`parseDevSources`；包信息格式、来源规则、`BC_DEV_PKG_SOURCES` 见 `docs/design/pkg-source.md`；来源常量 `PKG_SOURCE` 由 `shared` 导出 |
@@ -209,7 +210,7 @@ frame 打包时按下面的名字放置文件，toolkit 运行时按同样的名
 
 只负责安装包（大版本）：暂存、校验、安装与退出。应用包（小版本）的查找、下载、清理见 `main/libs/pkg`。
 
-`installApp(filePath)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动，Linux 的 xdg-open/Loongnix 分支使用参数数组执行，dpkg sudo 回退会安全引用路径；未知平台明确返回 `unsupported-platform`。
+`installApp(filePath, options?)` 只接受绝对路径和当前平台安装器扩展名（Windows `.exe/.msi`、macOS `.dmg/.pkg`、Linux `.deb`）。Windows/macOS 通过 Electron `shell.openPath` 启动；Linux 交给 `@base-client/deb-installer` 的 `installDeb`（系统安装器 → 终端窗口 + pkexec → 静默安装），交出后退出客户端。`options`（仅 Linux）：`packageName` / `version` 为期望值（与 deb 中不一致则不安装），`relaunch` 为静默安装结束后重新启动的命令（如 `{ command: '/usr/bin/<name>' }`）。静默安装的结果由 `consumeInstallResult()` 在下次启动时读取（读后删除）。未知平台明确返回 `unsupported-platform`。
 
 业务主进程已经取得安装器但需要等待用户确认时，使用 `stageLocalInstaller({ sourcePath, integrity })` 把文件复制到 `<temp>/base-client-toolkit-installers/<uuid>/` 并校验，再把返回的 staged descriptor 仅保存在主进程。确认安装时调用 `installStagedInstaller(staged)`；该方法会验证路径仍位于受控命名空间，并在启动前再次计算 SHA-256。取消时调用 `discardStagedInstaller(staged)`，后续启动可调用 `cleanupStagedInstallers()` best-effort 清理默认超过 24 小时的陈旧目录。Windows 安装器启动后可能锁定文件，旧客户端又会立即退出，因此成功启动不承诺当场删除 staged 文件。
 
@@ -224,7 +225,7 @@ toolkit 只提供下载/本地交接、校验和平台启动 adapter，不决定
 | logger | `log4js` | 必装（`libs/logger` 顶层 require，Service 也依赖它） |
 | store | `electron-store` | 必装（`libs/store` 顶层 require） |
 | update | `semver` | 必装（`capability/update` 顶层 require） |
-| update（Linux 提权安装） | `@vscode/sudo-prompt` | 可选：仅在 Linux 提权安装回退路径实际执行时经 `loadOptionalPeer` 加载 |
+| update（Linux 安装） | `@base-client/deb-installer` | 依赖（非 peer），Node 16.17 可用 |
 
 `log4js` / `electron-store` / `semver` 的缺失会在**安装期**暴露（`peerDependencies` 未标 optional），
 不会等到运行期加载某个模块才抛。

@@ -40,19 +40,12 @@
     "license": "ISC",
     "description": "",
     "peerDependencies": {
-        "@vscode/sudo-prompt": ">=9 <10",
         "electron": ">=22 <29",
         "electron-store": ">=8 <9",
         "log4js": ">=6 <7",
         "semver": ">=7 <8"
     },
-    "peerDependenciesMeta": {
-        "@vscode/sudo-prompt": {
-            "optional": true
-        }
-    },
     "devDependencies": {
-        "@vscode/sudo-prompt": "^9.3.2",
         "electron-store": "^8.2.0",
         "eslint": "^10.12.0",
         "eslint-plugin-n": "^18.4.1",
@@ -61,6 +54,7 @@
         "vitest": "^2.1.9"
     },
     "dependencies": {
+        "@base-client/deb-installer": "0.0.1",
         "archiver": "^6.0.2",
         "fs-extra": "^11.3.6",
         "lodash.merge": "^4.6.2",

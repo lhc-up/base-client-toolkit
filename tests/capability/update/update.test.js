@@ -12,6 +12,8 @@ const { createUpdateCapability } = require('../../../src/main/capability/update/
 const TEMP = nodePath.resolve('/Temp');
 const INCOMING = nodePath.resolve('/incoming');
 const OUTSIDE = nodePath.resolve('/outside');
+const PACKAGES = nodePath.resolve('/home/u/.config/app/UserData/Packages');
+const RESULT_FILE = nodePath.join(PACKAGES, '.install-result.json');
 
 function createHarness(platform = 'win32', overrides = {}) {
     const calls = [];
@@ -40,7 +42,6 @@ function createHarness(platform = 'win32', overrides = {}) {
         },
         randomUUID: () => 'temp-id',
         createHash,
-        execFile: vi.fn((_file, _args, callback) => callback(null, '', '')),
         app: { exit: code => calls.push(['exit', code]) },
         dialog: { showErrorBox: (...args) => calls.push(['dialog', ...args]) },
         shell: { openPath: async file => { calls.push(['openPath', file]); return ''; } },
@@ -57,11 +58,14 @@ function createHarness(platform = 'win32', overrides = {}) {
         },
         filePathConfig: {
             temp: platform === 'win32' ? TEMP : '/tmp',
+            updatePackage: PACKAGES,
         },
-        loadSudoPrompt: () => ({ exec: vi.fn() }),
+        debInstaller: {
+            installDeb: vi.fn(async options => ({ started: true, method: 'installer', program: '/usr/bin/kylin-installer', options })),
+        },
         ...overrides,
     };
-    return { calls, files, update: createUpdateCapability(deps) };
+    return { calls, files, deps, update: createUpdateCapability(deps) };
 }
 
 describe('capability/update 退出', () => {
@@ -120,43 +124,59 @@ describe('capability/update platform contract', () => {
         expect(calls.some(call => call[0] === 'openPath')).toBe(false);
     });
 
-    it('Linux（非龙芯）交给 xdg-open 后不退出客户端（与业务项目原实现一致）', async () => {
+    it('Linux：交给 deb-installer 的 installDeb，传入期望值、结果文件与重启命令；交出后退出客户端', async () => {
         const { calls, update } = createHarness('linux');
-        await expect(update.installApp('/tmp/app.deb')).resolves.toEqual({ started: true });
-        expect(calls.some(call => call[0] === 'exit')).toBe(false);
-    });
-
-    it('龙芯用 xterm 终端安装：标题、提示与 sleep 3 同业务项目原实现，路径作为 sh 的 $1 传入；安装结束后退出', async () => {
-        const execFile = vi.fn((_file, _args, callback) => callback(null, '', ''));
-        const { calls, update } = createHarness('linux', {
-            execFile,
-            os: { isLinux: () => true, isLoongnix: () => true, isWindows: () => false, isMacOS: () => false },
-        });
-        const installer = "/tmp/release name';touch owned;.deb";
-        await expect(update.installApp(installer)).resolves.toEqual({ started: true });
-        expect(execFile).toHaveBeenCalledWith(
-            'xterm',
-            ['-T', '安装更新', '-e', 'sh', '-c', 'sudo dpkg -i "$1" && echo 安装完成，3s后退出安装程序\nsleep 3', 'sh', installer],
-            expect.any(Function),
-        );
+        const relaunch = { command: '/usr/bin/questionaire' };
+        const result = await update.installApp('/tmp/installer-x.deb', { packageName: 'questionaire', version: '2.8.0', relaunch });
+        expect(result).toEqual({ started: true, method: 'installer' });
         expect(calls).toContainEqual(['exit', 1]);
     });
 
-    it('Linux 安装启动失败时提示并退出', async () => {
-        const execFile = vi.fn((_file, _args, callback) => callback(new Error('fail'), '', ''));
-        const sudoExec = vi.fn((_cmd, _opts, callback) => callback(new Error('denied')));
-        const { calls, update } = createHarness('linux', { execFile, loadSudoPrompt: () => ({ exec: sudoExec }) });
-        await expect(update.installApp('/tmp/app.deb')).resolves.toEqual({ started: false, reason: 'open-failed' });
+    it('Linux：installDeb 收到的参数', async () => {
+        const installDeb = vi.fn(async () => ({ started: true, method: 'terminal' }));
+        const { update } = createHarness('linux', { debInstaller: { installDeb } });
+        await update.installApp('/tmp/installer-x.deb', { packageName: 'p', version: '1.0', relaunch: { command: '/usr/bin/p' } });
+        const [options] = installDeb.mock.calls[0];
+        expect(options).toMatchObject({
+            debPath: '/tmp/installer-x.deb',
+            packageName: 'p',
+            version: '1.0',
+            resultFile: RESULT_FILE,
+            relaunch: { command: '/usr/bin/p' },
+        });
+        expect(typeof options.logger.info).toBe('function');
+    });
+
+    it('Linux：没能交出安装时提示并退出，返回 deb-installer 的原因', async () => {
+        const installDeb = vi.fn(async () => ({ started: false, reason: 'no-pkexec', detail: 'x' }));
+        const { calls, update } = createHarness('linux', { debInstaller: { installDeb } });
+        await expect(update.installApp('/tmp/app.deb')).resolves.toEqual({ started: false, reason: 'no-pkexec', detail: 'x' });
         expect(calls.some(call => call[0] === 'dialog')).toBe(true);
         expect(calls).toContainEqual(['exit', 1]);
     });
 
-    it('passes Linux installer paths as execFile arguments without shell interpolation', async () => {
-        const execFile = vi.fn((_file, _args, callback) => callback(null, '', ''));
-        const { update } = createHarness('linux', { execFile });
-        const installer = "/tmp/release name';touch owned;.deb";
-        await expect(update.installApp(installer)).resolves.toEqual({ started: true });
-        expect(execFile).toHaveBeenCalledWith('xdg-open', [installer], expect.any(Function));
+    it('Linux：不传 options 也能调用', async () => {
+        const installDeb = vi.fn(async () => ({ started: true, method: 'installer' }));
+        const { update } = createHarness('linux', { debInstaller: { installDeb } });
+        await update.installApp('/tmp/app.deb');
+        expect(installDeb.mock.calls[0][0]).toMatchObject({ debPath: '/tmp/app.deb', packageName: undefined, relaunch: undefined });
+    });
+
+    it('consumeInstallResult：读取并删除结果文件；没有时返回 null；无法解析时返回 null 并删除', () => {
+        const file = RESULT_FILE;
+        const { files, update } = createHarness('linux');
+        expect(update.consumeInstallResult()).toBeNull();
+        files.set(file, { status: 'failed', code: 0 });
+        expect(update.consumeInstallResult()).toEqual({ status: 'failed', code: 0 });
+        expect(files.has(file)).toBe(false);
+        const bad = createHarness('linux');
+        bad.files.set(file, 'x');
+        const badUpdate = createUpdateCapability({
+            ...bad.deps,
+            fse: { ...bad.deps.fse, readJSONSync: () => { throw new Error('bad json'); } },
+        });
+        expect(badUpdate.consumeInstallResult()).toBeNull();
+        expect(bad.files.has(file)).toBe(false);
     });
 });
 

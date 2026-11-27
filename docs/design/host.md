@@ -125,7 +125,7 @@ module.exports = {
 - 运行时文件：宿主经 `exposeHostRuntime` 装入；webpack 依赖其中的静态 `require` 把全量 toolkit 打进宿主。
 - getter 惰性加载：首次访问才 `require`，未用到的子包不执行顶层代码。
 - 范围 = §3.4 中「映射：是」的子路径；测试校验与 exports 展开结果一致，新增子包未重新生成即失败。
-- 宿主需安装 toolkit 的全部 optional peer（`log4js` / `electron-store` / `semver` / `@vscode/sudo-prompt`）。
+- 宿主需安装 toolkit 的全部 peer（`log4js` / `electron-store` / `semver`）。
 
 ## 5. 包的声明与挂载
 

@@ -32,6 +32,7 @@ module.exports = {
     get "main/libs/singleInstance"() { return require("../main/libs/singleInstance.js"); },
     get "main/libs/sm4"() { return require("../main/libs/sm4/index.js"); },
     get "main/libs/store"() { return require("../main/libs/store.js"); },
+    get "main/libs/userDataDir"() { return require("../main/libs/userDataDir.js"); },
     get "main/paths"() { return require("../main/paths.js"); },
     get "notice"() { return require("../notice/main.js"); },
     get "service"() { return require("../service/main.js"); },

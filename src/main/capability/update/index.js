@@ -6,13 +6,12 @@
 const path = require('path');
 const fse = require('fs-extra');
 const { createHash, randomUUID } = require('crypto');
-const { execFile } = require('child_process');
 const { app, dialog, shell } = require('electron');
 
 const logger = require('../../libs/logger');
 const os = require('../../libs/os');
 const { getFilePathConfig } = require('../../paths');
-const { loadOptionalPeer } = require('../../../shared/loadOptionalPeer');
+const debInstaller = require('@base-client/deb-installer');
 const { createUpdateCapability } = require('./createUpdateCapability');
 
 module.exports = createUpdateCapability({
@@ -20,12 +19,11 @@ module.exports = createUpdateCapability({
     fse,
     randomUUID,
     createHash,
-    execFile,
     app,
     dialog,
     shell,
     logger,
     os,
     filePathConfig: getFilePathConfig(),
-    loadSudoPrompt: () => loadOptionalPeer('@vscode/sudo-prompt'),
+    debInstaller,
 });

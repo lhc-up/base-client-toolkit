@@ -68,5 +68,7 @@ module.exports = createPkgLib({
     // 内置目录：<资源根目录>/packages。调用时计算：资源根目录取决于宿主运行方式
     getBuiltinDir: () => resolveResource(BUILTIN_PKG_DIR),
     getUpdateDir: () => getFilePathConfig().updatePackage,
-    getCopyDir: () => path.join(os.tmpdir(), 'base-client', app.getName(), 'pkg-copies'),
+    // 按用户数据目录名区分（宿主用 setUserDataDirByName 设为 package.json 的 name）：productName 相同的客户端
+    // 可同时运行，按 productName 区分会互相清掉对方正在使用的副本
+    getCopyDir: () => path.join(os.tmpdir(), 'base-client', path.basename(app.getPath('userData')), 'pkg-copies'),
 });
