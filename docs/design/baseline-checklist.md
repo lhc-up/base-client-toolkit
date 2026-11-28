@@ -178,7 +178,9 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 - 两个项目的 `package.json` / `package-lock.json` 有未提交改动（yalc 临时依赖加了四个包），npm 发布后改为只依赖 toolkit、frame 时一并处理。
 - **electron-builder 系列六个包已发布到 npm（2026-11-28，账号 lhc-up，组织 base-client）**：builder-util、electron-publish `24.13.1-bc.1`，app-builder-lib、dmg-builder、electron-builder-squirrel-windows、electron-builder `24.13.3-bc.1`，`latest` 均指向它们；npmmirror 已同步（app-builder-lib、electron-builder 手动触发过同步）。每个包另有一个 npm 自动生成的占位版本 `0.0.0-stage`（description 为 "Temporary package placeholder for staged publishing"，2 个文件），不影响安装。发布前定稿：每个包的 README 由生成脚本写明基于的官方版本、与官方的区别和全部改动明细，生成后与官方包逐文件比较自检；缺 LICENSE 的 app-builder-lib、dmg-builder 补 MIT 原文；repository / homepage / bugs 指向 `github.com/lhc-up/base-client-electron-builder`（已建并推送 main，`e13954a`）；publishConfig 为 `{ access: public, tag: latest, registry: registry.npmjs.org }`；不加 contributors。
 - 发布后验证：frame 与两个项目去掉这六个包的 yalc 引用，改从 npmmirror 安装（frame `a4f8ee5` 提交 lock）；依赖树中无官方同系列包；frame 单测 390 项通过；问卷 Windows x64 安装包打包成功。两个项目的 `package.json` / `package-lock.json`（去掉了 app-builder-lib、builder-util 的 yalc 引用）未提交，等 toolkit、frame 发布后一并改为版本号依赖。
-- 下一模块：deb-installer、toolkit、frame 的发布确认。测试包 `baseline-linux-kit` 的源码快照与 `mac/build-all.sh`（只 yalc 发布两个改版包）尚未更新，npm 发布后重新生成。
+- **deb-installer 0.1.0 已发布到 npm（2026-11-28）**：用户定版本 0.1.0（测试机验证完、接口定下后再升 1.0.0）；补 author lhc-up、repository / homepage / bugs（`github.com/lhc-up/base-client-deb-installer`，已推送 main `4e91e51`）、publishConfig（public、registry.npmjs.org）、MIT LICENSE（Copyright (c) 2026 lhc-up）；README 加安装命令与「待测试机验证」。npmmirror 已同步（手动触发过）。toolkit 依赖改为 `^0.1.0`，从 npmmirror 安装，单测 657 项通过。
+- npm 新包首次发布会先出现占位版本 `0.0.0-stage`（npm 分阶段发布功能），正式版约 2～4 分钟后出现；npmmirror 可能先同步到占位版本，需手动触发同步。
+- 下一模块：toolkit、frame 的发布确认。测试包 `baseline-linux-kit` 的源码快照与 `mac/build-all.sh`（只 yalc 发布两个改版包）尚未更新，npm 发布后重新生成。
 
 ### 8.0.0 2026-11-27
 

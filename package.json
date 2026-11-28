@@ -54,7 +54,7 @@
         "vitest": "^2.1.9"
     },
     "dependencies": {
-        "@base-client/deb-installer": "0.0.1",
+        "@base-client/deb-installer": "^0.1.0",
         "archiver": "^6.0.2",
         "fs-extra": "^11.3.6",
         "lodash.merge": "^4.6.2",
