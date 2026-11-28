@@ -1,6 +1,6 @@
 {
     "name": "@base-client/toolkit",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "main": "src/main/index.js",
     "exports": {
         "./main": "./src/main/index.js",
@@ -35,10 +35,26 @@
         "gen:host-modules": "node scripts/hostModules.js",
         "prepublishOnly": "npm run lint && npm test"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "description": "",
+    "keywords": [
+        "electron",
+        "toolkit",
+        "auto-update",
+        "window",
+        "ipc"
+    ],
+    "author": "lhc-up",
+    "license": "MIT",
+    "description": "Electron 增强工具包：Service、Notice、BaseWindow、窗口与系统工具库，以及 renderer 可直接使用的运行时 capability",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lhc-up/base-client-toolkit.git"
+    },
+    "homepage": "https://github.com/lhc-up/base-client-toolkit#readme",
+    "bugs": "https://github.com/lhc-up/base-client-toolkit/issues",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
     "peerDependencies": {
         "electron": ">=22 <29",
         "electron-store": ">=8 <9",

@@ -4,6 +4,29 @@
 
 包边界为显式子路径导出，**没有根聚合入口**（`require('@base-client/toolkit')` 不可解析）。
 
+## 安装
+
+```bash
+npm i @base-client/toolkit
+```
+
+需要项目自行安装的 peer 依赖：
+
+| 包 | 版本范围 |
+|---|---|
+| `electron` | `>=22 <29`（实际只在 Electron 22 上验证过） |
+| `electron-store` | `>=8 <9` |
+| `log4js` | `>=6 <7` |
+| `semver` | `>=7 <8` |
+
+按子路径引入，例如：
+
+```js
+const { BaseWindow } = require('@base-client/toolkit/main');
+```
+
+子路径的完整列表见 `package.json` 的 `exports`。
+
 ## 环境要求 —— 两个不同的 Node 版本，别混
 
 | | 数字 | 由谁决定 | 载体 |
