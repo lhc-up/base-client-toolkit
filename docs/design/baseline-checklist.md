@@ -166,11 +166,18 @@ Linux 测试清单补充项（未实测，各 Linux 行都跑）：
 2. ~~F8 龙芯镜像源：仅写文档，还是 frame 内置镜像配置~~：frame 内置并加检查（2026-11-21）。
 3. ~~问卷 `docs/base-client/已知问题.md` 的既有更新提交（`39fcdf98`）保留还是撤销~~：已关闭，保留（2026-11-21）。
 
-## 8. 进度记录（最近一次：2026-11-27）
+## 8. 进度记录（最近一次：2026-11-28）
 
 > 只记录「做到哪了、下一步做什么」，条目状态以上面各表为准。下次开始时先读本节。
 
-### 8.0 2026-11-27
+### 8.0 2026-11-28
+
+- 改版扩展到 electron-builder 全系列（用户决定，方案 1）：原方案 frame 绕过 electron-builder 直接调用 app-builder-lib，且官方 `electron-publish`（app-builder-lib 的普通依赖）、`dmg-builder` / `electron-builder-squirrel-windows`（peer，npm 自动安装）仍引用官方 builder-util / app-builder-lib，依赖树里改版与官方混用。现在六个包都由 base-client-electron-builder 生成（`3e49274`）：builder-util、app-builder-lib 打补丁，electron-publish、dmg-builder、electron-builder-squirrel-windows、electron-builder 只把引用改为改版；引用改写只改 `require` / `require.resolve` / `import()` / `from`，同名字符串（配置文件名 `electron-builder`、缓存目录、日志名、检查项目依赖的包名）不动。frame 改为依赖 `@base-client/electron-builder` 并调用其 `build`（`94f728f`）。
+- 版本号规则（用户定）：`<官方版本>-bc.<序号>`，同一官方版本每改一次序号加 1，官方版本升级后从 bc.1 重新开始；依赖写死版本，发布用 `--tag latest`。
+- 验证：改版仓库单测 9 项、frame 390 项通过；问卷、整合两个项目 yalc 接入六个包后 `node_modules` 中没有官方同系列包；问卷 Windows x64 安装包、龙芯 `loongarch64 --dir`（LoongArch ELF，e_flags 0x03）打包成功。
+- 两个项目的 `package.json` / `package-lock.json` 有未提交改动（yalc 临时依赖加了四个包），npm 发布后改为只依赖 toolkit、frame 时一并处理。测试包 `baseline-linux-kit` 的源码快照与 `mac/build-all.sh`（只 yalc 发布两个改版包）尚未更新，npm 发布后重新生成。
+
+### 8.0.0 2026-11-27
 
 - K13 + K20 + F13 讨论定稿并实现（详见各条目）：安装标识按客户端区分（deb 包名 = name、`/opt/<appId>`、数据目录 `<appData>/<name>`、`--replaces=guojiajiance`）；Linux 大版本安装封装为 `@base-client/deb-installer`（系统安装器 → 终端 + 一次 pkexec → 静默），交出后客户端退出；electron-builder 改用「官方包 + 补丁」生成的 `@base-client/builder-util` / `@base-client/app-builder-lib`；龙芯 `--arch loongarch64`（旧世界）/ `loong64`（新世界，留位置报错）。
 - 实现中发现并修复：`.npmrc` 的 electron_mirror 使龙芯镜像失效（打包期间配置的镜像优先）；从旧目录升级时 `/usr/bin/<name>` 可能仍指向旧目录（安装后脚本清理同名 update-alternatives 候选）。
@@ -180,8 +187,8 @@ pmaseline-linux-kit`（与 `.tar.gz`）已更新为全功能验证版：第 0�
 
 **交接（2026-11-27 收工）**
 
-- 用户决定：五个包（`@base-client/builder-util`、`app-builder-lib`、`deb-installer`、`toolkit`、`frame`）全部发布到 npm 公共仓库，**逐个讨论后发布**，顺序 builder-util → app-builder-lib → deb-installer → toolkit → frame。发布后两个项目只保留 toolkit、frame 的版本号依赖，删掉三个间接依赖（现在是 yalc 的 `file:.yalc/…`）。npm 上五个包名均未被占用（`npm view` 404）；`@base-client` 组织是否可用、用谁的账号，待用户确认。
-- **进行中：`@base-client/builder-util` 发布前确认**（已给出、未回复）：① 版本号——现为 `24.13.1-bc.1`（semver 预发布，npm 需 `--tag`、范围匹配不到），可选 a `1.0.0`（上游版本写进说明）/ b 保持并 `--tag latest` / c `24.13.1001`；② `repository`/`homepage`/`bugs` 改指 `github.com/lhc-up/base-client-electron-builder`（`directory: packages/builder-util`）；③ `description` 与 README 改为说明改版内容、上游版本、仅供 app-builder-lib 使用；④ `LICENSE`（MIT 原文）保留、`author` 保留原作者并加 `contributors`（名字 / 邮箱待用户给）；⑤ 加 `publishConfig.access: public`。这些都要写进 `scripts/patches.js` 的 `packageJson()` 与生成流程（README 由脚本复制），不手改生成结果。
+- 用户决定：基础包全部发布到 npm 公共仓库，**逐个讨论后发布**。2026-11-28 改为九个包，顺序 builder-util → electron-publish → app-builder-lib → dmg-builder → electron-builder-squirrel-windows → electron-builder → deb-installer → toolkit → frame（仓库地址、description、contributors、publishConfig 对六个改版包统一处理）。发布后两个项目只保留 toolkit、frame 的版本号依赖，删掉三个间接依赖（现在是 yalc 的 `file:.yalc/…`）。npm 上五个包名均未被占用（`npm view` 404）；`@base-client` 组织是否可用、用谁的账号，待用户确认。
+- **进行中：`@base-client/builder-util` 发布前确认**（已给出、未回复）：① 版本号——**已定（2026-11-28）**：`<官方版本>-bc.N`，同一官方版本下 bc.1、bc.2… 递增，官方版本升级后（如 24.15.1）从 bc.1 重新开始；依赖方写死版本，发布用 `--tag latest`；② `repository`/`homepage`/`bugs` 改指 `github.com/lhc-up/base-client-electron-builder`（`directory: packages/builder-util`）；③ `description` 与 README 改为说明改版内容、上游版本、仅供 app-builder-lib 使用；④ `LICENSE`（MIT 原文）保留、`author` 保留原作者并加 `contributors`（名字 / 邮箱待用户给）；⑤ 加 `publishConfig.access: public`。这些都要写进 `scripts/patches.js` 的 `packageJson()` 与生成流程（README 由脚本复制），不手改生成结果。
 - 用户问过补丁方案的原理，已说明（生成时按原文精确替换、原文须恰好出现 1 次；引用用正则改写；JSON 按结构改），仓库名是否改为 `base-client-builder-patches` 等未定。
 - 两个新仓库只在本地：`D:\Desktop
 pmase-client-deb-installer`（`bb34af1`）、`D:\Desktop
